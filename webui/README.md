@@ -70,6 +70,79 @@ Because the engine is a process-wide singleton with shared HTTP clients, jobs
 are serialised with an `asyncio` lock — multiple users can queue jobs, and they
 run one after another.
 
+## Integration with XHS-Downloader
+
+XHS-Downloader is really **one engine with several front-ends**. The engine is
+`source.application.app.XHS`; `main.py` dispatches to the different front-ends:
+
+| Command                  | Front-end       | Serves                     |
+| ------------------------ | --------------- | -------------------------- |
+| `python main.py`         | TUI (Textual)   | terminal app               |
+| `python main.py api`     | FastAPI REST    | `:5556/xhs/detail`         |
+| `python main.py mcp`     | MCP server      | `:5556/mcp/`               |
+| `python main.py <args>`  | CLI (click)     | terminal                   |
+| **`python -m webui`**    | **Web UI**      | **`:5557` (this folder)**  |
+
+The Web UI is **just another consumer of the same engine** — it imports `XHS`
+and calls the identical pipeline the other modes use:
+
+```
+webui/app.py
+   └─ from source import XHS
+        XHS(**engine_kwargs)          # same constructor the TUI/API/MCP/CLI call
+        └─ xhs.extract_links(text)    # same link parsing (explore/item/user/xhslink)
+        └─ xhs.extract(link, ...)     # same Download / Image / Video / Html modules
+```
+
+### What it shares with the other modes
+
+- **The engine and every option.** `folder_name`, `name_format`, `image_format`,
+  `video_preference`, `folder_mode`, `author_archive`, `image/video/live_download`,
+  `write_mtime`, `cookie`, `proxy` are the exact `XHS(...)` parameters documented
+  in the project README's *配置文件 / Settings* table.
+- **The `name_format` field tokens.** The UI's friendly ids (`title`, `author`,
+  `likes`, …) map to the same Chinese tokens the engine expects, via
+  `NAME_FIELDS` in `app.py`. A format built in the UI behaves identically to one
+  set in `settings.json`.
+- **Link parsing and download logic.** No copies or re-implementations — the UI
+  reuses `extract_links()` and `extract()` verbatim, so any engine fix or new
+  supported link type is picked up automatically.
+
+### What it deliberately does *not* share (isolation)
+
+This is what keeps the Web UI from interfering with your TUI/CLI usage:
+
+| Concern                | Other modes                          | Web UI                                                    |
+| ---------------------- | ------------------------------------ | --------------------------------------------------------- |
+| Settings source        | `Volume/settings.json`               | per-job options from the browser (never reads/writes it)  |
+| Download location      | `Volume/Download`                    | a unique temp dir per job, deleted after zipping          |
+| History DB (skip)      | `Volume/ExploreID.db` (`download_record`) | disabled — every job downloads fresh, skips nothing   |
+| Metadata DB            | `Volume/.../ExploreData.db` (`record_data`) | disabled — optional `metadata.json` in the ZIP instead |
+| Concurrency            | one session per process              | jobs serialised with an `asyncio` lock (engine is a singleton) |
+
+Because it reads none of your persisted config and writes to throwaway temp
+dirs, running the Web UI **cannot overwrite your `settings.json`, pollute your
+`Volume/Download` folder, or mark works as "already downloaded"** for the other
+modes.
+
+### Optionally wiring it into `main.py`
+
+To keep every feature in a single folder, the Web UI ships as a standalone
+`python -m webui` entry point and does **not** modify `main.py`. If you later
+want a `python main.py web` subcommand, it is a small, self-contained addition
+(the dispatcher in `main.py` already branches on `argv[1]`):
+
+```python
+# in main.py, in the __main__ block alongside the api / mcp branches.
+# webui.__main__.main() is synchronous (it calls uvicorn.run itself),
+# so it does not need asyncio.run():
+elif argv[1].upper() == "WEB":
+    from webui.__main__ import main as run_web
+    run_web()
+```
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the request/data flow in detail.
+
 ## API
 
 | Method | Path                        | Purpose                          |
