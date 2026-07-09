@@ -58,6 +58,24 @@ instead. The one exception outside this folder is `/Downloads/` in
 Because the engine is a process-wide singleton with shared HTTP clients, jobs
 are serialised with an `asyncio` lock.
 
+### Things to be careful of
+
+- **Hold a reference to the job task.** `asyncio` keeps only a weak reference to
+  a task, so a fire-and-forget `create_task` can be collected mid-`await` and
+  the browser polls a job that never finishes. `RUNNING_TASKS` keeps it alive.
+- **Only evict finished jobs.** `_cleanup_expired` checks `Job.finished()` as
+  well as the TTL: a batch running longer than an hour would otherwise be swept
+  by the next job's cleanup and start 404-ing at the browser.
+- **Validate at the boundary, not at use.** Every enum on `BatchOptions` rejects
+  unknown values with a `field_validator`, so `engine_kwargs` only maps names.
+  Do not reintroduce a silent fallback: it turns a client's typo into a
+  wrong-format download.
+- **Some filesystem work is still synchronous** inside `_run_job` —
+  `mkdtemp`, `rmtree`, `_write_metadata`, and the `_has_media` short-circuit.
+  They are small. The one walk that is not, `_folder_stats` (`rglob` + `stat`
+  per file), runs in `asyncio.to_thread` so it does not stall status polls. If
+  you add another whole-tree walk, put it on a thread too.
+
 ## API
 
 | Method | Path                        | Purpose                              |

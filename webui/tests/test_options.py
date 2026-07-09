@@ -11,6 +11,7 @@ arguments. These tests pin that translation down.
 
 from __future__ import annotations
 
+import time
 import unittest
 from pathlib import Path
 
@@ -20,8 +21,13 @@ from webui.app import (
     DATE_FORMATS,
     DEFAULT_DATE_FORMAT,
     FOLDER_NAME_LENGTH,
+    JOB_TTL_SECONDS,
+    JOBS,
+    MAX_LOG_LINES,
     NAME_FIELDS,
     BatchOptions,
+    Job,
+    _cleanup_expired,
     folder_for_link,
 )
 
@@ -75,6 +81,54 @@ class DateFormatTest(unittest.TestCase):
                 self.assertNotIn("\\", pattern)
 
 
+class EnumRejectionTest(unittest.TestCase):
+    """Every enum field rejects rather than silently coercing to a default.
+
+    Two policies for the same kind of field is surprising, and a silent
+    fallback turns a client's typo into a wrong-format download.
+    """
+
+    def test_rejects_an_unknown_image_format(self) -> None:
+        with self.assertRaises(ValidationError) as caught:
+            BatchOptions(links="x", image_format="gif")
+        self.assertIn("gif", str(caught.exception))
+
+    def test_rejects_an_unknown_video_preference(self) -> None:
+        with self.assertRaises(ValidationError):
+            BatchOptions(links="x", video_preference="fastest")
+
+    def test_image_format_is_case_insensitive(self) -> None:
+        self.assertEqual(BatchOptions(links="x", image_format="webp").image_format, "WEBP")
+
+
+class JobTest(unittest.TestCase):
+    def test_logs_are_bounded(self) -> None:
+        # A large batch logs a line per file; the browser only renders the tail.
+        job = Job(id="j")
+        for i in range(MAX_LOG_LINES + 50):
+            job.logs.append(str(i))
+        self.assertEqual(len(job.logs), MAX_LOG_LINES)
+        self.assertEqual(job.public()["logs"][-1], str(MAX_LOG_LINES + 49))
+
+    def test_only_finished_jobs_expire(self) -> None:
+        # A batch running longer than the TTL must not be swept out from under
+        # the browser polling it.
+        stale = time.time() - JOB_TTL_SECONDS - 1
+        JOBS.clear()
+        for status in ("pending", "running", "done", "error"):
+            JOBS[status] = Job(id=status, status=status, created_at=stale)
+        _cleanup_expired()
+        self.assertEqual(sorted(JOBS), ["pending", "running"])
+        JOBS.clear()
+
+    def test_fresh_finished_jobs_survive(self) -> None:
+        JOBS.clear()
+        JOBS["j"] = Job(id="j", status="done")
+        _cleanup_expired()
+        self.assertIn("j", JOBS)
+        JOBS.clear()
+
+
 class EngineKwargsTest(unittest.TestCase):
     def test_isolation_policy_is_hard_coded(self) -> None:
         kwargs = BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))
@@ -86,10 +140,6 @@ class EngineKwargsTest(unittest.TestCase):
     def test_time_format_is_not_an_engine_kwarg(self) -> None:
         # It is applied to xhs.explore at run time instead; see _run_job.
         self.assertNotIn("time_format", BatchOptions(links="x").engine_kwargs(Path("/tmp/work")))
-
-    def test_falls_back_on_an_unusable_image_format(self) -> None:
-        kwargs = BatchOptions(links="x", image_format="gif").engine_kwargs(Path("/tmp/work"))
-        self.assertEqual(kwargs["image_format"], "JPEG")
 
     def test_upper_cases_a_valid_image_format(self) -> None:
         kwargs = BatchOptions(links="x", image_format="webp").engine_kwargs(Path("/tmp/work"))

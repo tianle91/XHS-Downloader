@@ -25,6 +25,8 @@ import re
 import shutil
 import tempfile
 import time
+from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from json import dump
 from os import getenv
@@ -107,6 +109,10 @@ DATE_FORMATS: dict[str, str] = {
 }
 DEFAULT_DATE_FORMAT = "datetime"
 
+# The browser only ever renders the tail of the log, and a large batch would
+# otherwise accumulate a line per file forever.
+MAX_LOG_LINES = 200
+
 # --------------------------------------------------------------------------- #
 # Job state
 # --------------------------------------------------------------------------- #
@@ -122,13 +128,16 @@ class Job:
     failed: int = 0
     skipped: int = 0
     current: str = ""
-    logs: list[str] = field(default_factory=list)
+    logs: deque[str] = field(default_factory=lambda: deque(maxlen=MAX_LOG_LINES))
     failed_links: list[str] = field(default_factory=list)
     error: str = ""
     output_dir: str = str(DOWNLOAD_DIR)
     file_count: int = 0
     size_bytes: int = 0
     created_at: float = field(default_factory=time.time)
+
+    def finished(self) -> bool:
+        return self.status in {"done", "error"}
 
     def public(self) -> dict:
         return {
@@ -140,7 +149,7 @@ class Job:
             "failed": self.failed,
             "skipped": self.skipped,
             "current": self.current,
-            "logs": self.logs[-200:],
+            "logs": list(self.logs),
             "failed_links": self.failed_links,
             "error": self.error,
             "output_dir": self.output_dir,
@@ -150,6 +159,12 @@ class Job:
 
 
 JOBS: dict[str, Job] = {}
+
+# ``asyncio`` keeps only a weak reference to a task, so a fire-and-forget job
+# can be garbage-collected mid-flight while suspended on an await -- leaving the
+# browser polling a job that will never finish. Hold a strong reference until
+# the task completes.
+RUNNING_TASKS: set[asyncio.Task] = set()
 
 
 class _LogCapture:
@@ -214,6 +229,22 @@ class BatchOptions(BaseModel):
             raise ValueError(f"Unknown date format: {value}")
         return value
 
+    @field_validator("image_format")
+    @classmethod
+    def _validate_image_format(cls, value: str) -> str:
+        # Upper-cased first: the engine's tokens are upper-case, and the UI's
+        # <option> values already are, so this only helps hand-written clients.
+        if (upper := value.upper()) not in VALID_IMAGE_FORMATS:
+            raise ValueError(f"Unknown image format: {value}")
+        return upper
+
+    @field_validator("video_preference")
+    @classmethod
+    def _validate_video_preference(cls, value: str) -> str:
+        if value not in VALID_VIDEO_PREFERENCE:
+            raise ValueError(f"Unknown video preference: {value}")
+        return value
+
     def name_format(self) -> str:
         return " ".join(NAME_FIELDS[f] for f in self.name_fields)
 
@@ -222,10 +253,7 @@ class BatchOptions(BaseModel):
         return DATE_FORMATS[self.date_format]
 
     def engine_kwargs(self, work_path: Path) -> dict:
-        image_format = self.image_format.upper()
-        if image_format not in VALID_IMAGE_FORMATS:
-            image_format = "JPEG"
-        preference = self.video_preference if self.video_preference in VALID_VIDEO_PREFERENCE else "resolution"
+        # Every field below is already validated, so this only maps names.
         return {
             # The engine's own folder is a throwaway: it is where ExploreData.db
             # lands. Media never goes here -- ``Download.folder`` is retargeted
@@ -233,8 +261,8 @@ class BatchOptions(BaseModel):
             "work_path": str(work_path),
             "folder_name": "engine",
             "name_format": self.name_format(),
-            "image_format": image_format,
-            "video_preference": preference,
+            "image_format": self.image_format,
+            "video_preference": self.video_preference,
             # Every link the engine accepts resolves to exactly one work, and
             # that work already has its own folder. Both of these would only
             # ever add one redundant level inside it.
@@ -273,6 +301,11 @@ def folder_for_link(link: str) -> str:
     the query string is dropped because a work's ``xsec_token`` is dated -- two
     copies of the same link pasted a day apart must still map to one folder.
     Whatever survives is reduced to a single safe path segment.
+
+    Two links agreeing on their first ``FOLDER_NAME_LENGTH`` characters would
+    share a folder, and the second would be skipped as already-downloaded. A
+    real link is well under that once the query string is gone -- the longest
+    shape is ``xiaohongshu.com_discovery_item_`` plus a 24-char id, 55 in all.
     """
     parts = urlsplit(link if "//" in link else f"//{link}")
     host = parts.netloc.removeprefix("www.")
@@ -284,11 +317,22 @@ def folder_for_link(link: str) -> str:
     return name[:FOLDER_NAME_LENGTH] or "link"
 
 
-def _media_files(folder: Path) -> list[Path]:
+def _media_files(folder: Path) -> Iterator[Path]:
     """Everything a user would call a download: media, not our metadata.json."""
     if not folder.is_dir():
-        return []
-    return [p for p in folder.rglob("*") if p.is_file() and p.name != METADATA_NAME]
+        return iter(())
+    return (p for p in folder.rglob("*") if p.is_file() and p.name != METADATA_NAME)
+
+
+def _has_media(folder: Path) -> bool:
+    """Whether a link has already been downloaded. Stops at the first file."""
+    return next(_media_files(folder), None) is not None
+
+
+def _folder_stats(folder: Path) -> tuple[int, int]:
+    """(file count, total bytes). Walks and stats, so call it off the loop."""
+    files = list(_media_files(folder))
+    return len(files), sum(p.stat().st_size for p in files)
 
 
 async def _run_job(job: Job, options: BatchOptions) -> None:
@@ -320,7 +364,7 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
 
                     # Checked before resolving, so re-running a batch of short
                     # links costs no redirect requests at all.
-                    if _media_files(folder) and not options.overwrite:
+                    if not options.overwrite and _has_media(folder):
                         job.skipped += 1
                         job.logs.append(f"Skipping {token}: {folder.name} already has files")
                         job.done += 1
@@ -342,14 +386,21 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                         job.logs.append(f"Error processing {token}: {exc!r}")
                         result = []
 
+                    # Couples us to the engine's data keys: if "作品ID" is ever
+                    # renamed, every work silently becomes a failure rather than
+                    # raising. Deliberate -- these keys are the engine's public
+                    # shape, used by its own recorder -- but that is the failure
+                    # mode to look for if a whole batch starts "failing".
                     valid = [item for item in (result or []) if item and item.get("作品ID")]
                     if valid:
                         job.success += 1
                         if options.include_metadata:
                             _write_metadata(folder, valid)
-                        files = _media_files(folder)
-                        job.file_count += len(files)
-                        job.size_bytes += sum(p.stat().st_size for p in files)
+                        # Walks the folder and stats every file: off the event
+                        # loop, so a large work does not stall status polls.
+                        count, size = await asyncio.to_thread(_folder_stats, folder)
+                        job.file_count += count
+                        job.size_bytes += size
                     else:
                         # The pasted link, not the resolved one: retry re-submits
                         # exactly what the user gave us.
@@ -390,7 +441,7 @@ def _discard_if_no_media(folder: Path) -> None:
     ``rmtree`` rather than ``rmdir``: a failed download can leave a stray
     metadata file or an empty subdirectory, and neither is worth keeping.
     """
-    if not _media_files(folder):
+    if not _has_media(folder):
         shutil.rmtree(folder, ignore_errors=True)
 
 
@@ -406,10 +457,15 @@ def _write_metadata(folder: Path, data: list[dict]) -> None:
 
 
 def _cleanup_expired() -> None:
-    """Drop stale job records. The downloaded files themselves are the user's."""
+    """Drop stale job records. The downloaded files themselves are the user's.
+
+    Only finished jobs are evicted. A batch that runs longer than the TTL would
+    otherwise be swept by the next job's cleanup while it is still going, and
+    the browser polling it would start getting a 404.
+    """
     now = time.time()
     for job_id, job in list(JOBS.items()):
-        if now - job.created_at > JOB_TTL_SECONDS:
+        if job.finished() and now - job.created_at > JOB_TTL_SECONDS:
             JOBS.pop(job_id, None)
 
 
@@ -444,7 +500,9 @@ async def create_job(options: BatchOptions) -> JSONResponse:
         raise HTTPException(status_code=400, detail="Please provide at least one link.")
     job = Job(id=uuid4().hex)
     JOBS[job.id] = job
-    asyncio.create_task(_run_job(job, options))
+    task = asyncio.create_task(_run_job(job, options))
+    RUNNING_TASKS.add(task)
+    task.add_done_callback(RUNNING_TASKS.discard)
     return JSONResponse({"job_id": job.id})
 
 
