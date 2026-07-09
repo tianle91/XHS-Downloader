@@ -67,7 +67,7 @@ class El {
 
 const DOM = {};
 for (const id of ["fieldChips","namePreviewWrap","namePreview","date_format","startBtn",
-                  "links","image_format","video_preference","folder_mode",
+                  "links","image_format","video_preference",
                   "write_mtime","include_metadata","image_download",
                   "video_download","live_download","cookie","proxy","progressCard",
                   "resultBanner","log","barFill","progressTitle","downloadDir",
@@ -209,7 +209,10 @@ check("total failure still offers retry", !hidden("failedBox"));
 // The overwrite toggle reaches the API.
 DOM.overwrite.checked = true;
 check("overwrite is sent to the API", collectOptions().overwrite === true);
-check("removed options are not sent", !("folder_name" in collectOptions()) && !("author_archive" in collectOptions()));
+const sent = collectOptions();
+check("removed options are not sent",
+  !("folder_name" in sent) && !("author_archive" in sent) && !("folder_mode" in sent),
+  Object.keys(sent).join(","));
 return JSON.stringify({ log: out });
 """
 

@@ -95,10 +95,19 @@ class EngineKwargsTest(unittest.TestCase):
         kwargs = BatchOptions(links="x", image_format="webp").engine_kwargs(Path("/tmp/work"))
         self.assertEqual(kwargs["image_format"], "WEBP")
 
-    def test_author_archive_is_off(self) -> None:
-        # Each link already has its own folder; grouping by author inside it
-        # would only add a redundant level.
-        self.assertFalse(BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))["author_archive"])
+    def test_extra_nesting_is_off(self) -> None:
+        # Every link the engine accepts resolves to exactly one work, and that
+        # work already has its own folder. Either of these would nest one
+        # redundant level inside it.
+        kwargs = BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))
+        self.assertFalse(kwargs["author_archive"])
+        self.assertFalse(kwargs["folder_mode"])
+
+    def test_layout_is_not_configurable(self) -> None:
+        # A client cannot re-enable the nesting the UI removed.
+        options = BatchOptions(links="x", folder_mode=True, author_archive=True)
+        self.assertFalse(hasattr(options, "folder_mode"))
+        self.assertFalse(options.engine_kwargs(Path("/tmp/work"))["folder_mode"])
 
     def test_engine_folder_is_not_the_download_folder(self) -> None:
         # The engine's folder holds ExploreData.db and lives in a temp dir;

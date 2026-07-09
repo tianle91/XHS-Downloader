@@ -187,7 +187,6 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
     </div>
 
     <div class="toggles" style="margin-top:18px;">
-      <label class="switch"><input type="checkbox" id="folder_mode"><span class="track"></span> Each work in its own sub-folder</label>
       <label class="switch"><input type="checkbox" id="write_mtime"><span class="track"></span> Set file time to publish date</label>
       <label class="switch"><input type="checkbox" id="include_metadata"><span class="track"></span> Include metadata.json</label>
       <label class="switch"><input type="checkbox" id="overwrite"><span class="track"></span> Re-download links already saved</label>
@@ -282,7 +281,7 @@ const DEFAULT_FIELDS = ["publish_time","author","title"];
 // Options remembered in this browser between sessions, by input id. The pasted
 // links are deliberately not saved: their xsec_token is dated and goes stale.
 const TEXT_SETTINGS = ["date_format","image_format","video_preference","cookie","proxy"];
-const TOGGLE_SETTINGS = ["folder_mode","write_mtime","include_metadata","overwrite",
+const TOGGLE_SETTINGS = ["write_mtime","include_metadata","overwrite",
                          "image_download","video_download","live_download"];
 // A saved value is only restored if it is still on offer, so a stale entry from
 // an older build cannot leave a <select> showing nothing.

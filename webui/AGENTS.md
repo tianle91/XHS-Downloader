@@ -120,9 +120,16 @@ webui/app.py
 ### What it shares with the other modes
 
 - **The engine and most options.** `name_format`, `image_format`,
-  `video_preference`, `folder_mode`, `image/video/live_download`, `write_mtime`,
-  `cookie`, `proxy` are the exact `XHS(...)` parameters documented in the
-  project README's *配置文件 / Settings* table.
+  `video_preference`, `image/video/live_download`, `write_mtime`, `cookie`,
+  `proxy` are the exact `XHS(...)` parameters documented in the project
+  README's *配置文件 / Settings* table.
+- **One work per link.** Every pattern `extract_links()` matches is a single
+  work — `user/profile/<id>/<note id>` is a note viewed through its author's
+  profile, not an account listing, and a bare profile URL matches nothing.
+  (`source/application/user_posted.py`, which would crawl an account's posts,
+  is not imported anywhere.) So `extract()` never returns more than one work,
+  and `folder_mode` / `author_archive` are pinned off in `engine_kwargs`: each
+  would nest exactly one redundant directory inside the link's own folder.
 - **The `name_format` field tokens.** The UI's friendly ids (`title`, `author`,
   `likes`, …) map to the same Chinese tokens the engine expects, via
   `NAME_FIELDS` in `app.py`. A format built in the UI behaves identically to one

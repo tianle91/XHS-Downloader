@@ -42,8 +42,8 @@ Building on it? See [`AGENTS.md`](AGENTS.md).
   AVIF) and video quality preference (resolution / bitrate / size).
 - **Media toggles** — enable/disable images, videos and live photos
   independently.
-- **Extras** — put each work in its own sub-folder, write the publish date to
-  file mtimes, and optionally include a `metadata.json` describing every work.
+- **Extras** — write the publish date to file mtimes, and optionally include a
+  `metadata.json` describing the work.
 - **Advanced** — optional Cookie (for restricted / higher-resolution content)
   and proxy.
 - **Remembered settings** — every option above is saved in your browser and

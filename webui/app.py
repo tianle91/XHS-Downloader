@@ -177,13 +177,12 @@ class _LogCapture:
 class BatchOptions(BaseModel):
     links: str = Field(..., description="Whitespace/newline separated XHS links")
 
-    # File naming / layout. These apply *inside* a link's folder; the folder
-    # itself is always named after the link.
+    # File naming. These apply *inside* a link's folder; the folder itself is
+    # always named after the link.
     name_fields: list[str] = Field(default_factory=lambda: ["publish_time", "author", "title"])
     date_format: str = DEFAULT_DATE_FORMAT
     image_format: str = "JPEG"
     video_preference: str = "resolution"
-    folder_mode: bool = False  # each work in its own sub-folder
 
     # Download toggles
     image_download: bool = True
@@ -236,9 +235,10 @@ class BatchOptions(BaseModel):
             "name_format": self.name_format(),
             "image_format": image_format,
             "video_preference": preference,
-            "folder_mode": self.folder_mode,
-            # Each link already has its own folder, so grouping by author inside
-            # it would only ever add one redundant level.
+            # Every link the engine accepts resolves to exactly one work, and
+            # that work already has its own folder. Both of these would only
+            # ever add one redundant level inside it.
+            "folder_mode": False,
             "author_archive": False,
             "image_download": self.image_download,
             "video_download": self.video_download,
@@ -387,8 +387,8 @@ def _discard_if_no_media(folder: Path) -> None:
     """A link that downloaded nothing must not leave a folder behind.
 
     Otherwise the next run would find it and skip the link it never fetched.
-    ``folder_mode`` can leave empty per-work subdirectories, so an ``rmdir`` of
-    the top level is not enough.
+    ``rmtree`` rather than ``rmdir``: a failed download can leave a stray
+    metadata file or an empty subdirectory, and neither is worth keeping.
     """
     if not _media_files(folder):
         shutil.rmtree(folder, ignore_errors=True)
