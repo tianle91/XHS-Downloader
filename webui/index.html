@@ -193,6 +193,9 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
         <div class="field">
           <label class="block" for="cookie">Cookie <small style="color:var(--muted);font-weight:400;">optional — improves quality for restricted/high-res content</small></label>
           <input type="text" id="cookie" placeholder="web_session=...; a1=...; ..." />
+          <div class="hint">Saved in this browser so you don't have to paste it again. If it
+            includes <code>web_session</code>, that is your XiaoHongShu login — high-resolution
+            video does not need it, so a logged-out cookie is enough.</div>
         </div>
         <div class="field">
           <label class="block" for="proxy">Proxy <small style="color:var(--muted);font-weight:400;">optional</small></label>
@@ -222,7 +225,8 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
 
   <footer>
     Powered by the <a href="https://github.com/JoeanAmier/XHS-Downloader" target="_blank" rel="noopener">XHS-Downloader</a> engine ·
-    For personal, authorised use only.
+    For personal, authorised use only.<br />
+    Your options are remembered in this browser · <a href="#" id="resetBtn">Reset to defaults</a>
   </footer>
 </div>
 
@@ -252,6 +256,21 @@ const SAMPLE_VALUES = {
   tags: "travel", likes: "1024", collections: "256", comments: "32", shares: "8",
 };
 const DEFAULT_FIELDS = ["publish_time","author","title"];
+
+// Options remembered in this browser between sessions, by input id. The pasted
+// links are deliberately not saved: their xsec_token is dated and goes stale.
+const TEXT_SETTINGS = ["folder_name","date_format","image_format","video_preference","cookie","proxy"];
+const TOGGLE_SETTINGS = ["folder_mode","author_archive","write_mtime","include_metadata",
+                         "image_download","video_download","live_download"];
+// A saved value is only restored if it is still on offer, so a stale entry from
+// an older build cannot leave a <select> showing nothing.
+const CHOICES = {
+  date_format: DATE_FORMATS.map(([key]) => key),
+  image_format: ["JPEG","PNG","WEBP","AUTO","HEIC","AVIF"],
+  video_preference: ["resolution","bitrate","size"],
+};
+const STORAGE_KEY = "xhs-webui-settings-v1";
+
 let selected = [...DEFAULT_FIELDS];
 let running = false;
 
@@ -297,6 +316,7 @@ function renderChips() {
       if (at >= 0) selected.splice(at, 1);
       else selected.push(key);
       renderChips();
+      saveSettings();
     };
     box.appendChild(chip);
   });
@@ -314,28 +334,59 @@ function renderDateFormats() {
   });
   sel.onchange = updatePreview;
 }
-renderDateFormats();
-renderChips();
 
 function collectOptions() {
-  return {
-    links: $("links").value,
-    folder_name: $("folder_name").value || "Download",
-    name_fields: selected,
-    date_format: $("date_format").value,
-    image_format: $("image_format").value,
-    video_preference: $("video_preference").value,
-    folder_mode: $("folder_mode").checked,
-    author_archive: $("author_archive").checked,
-    write_mtime: $("write_mtime").checked,
-    include_metadata: $("include_metadata").checked,
-    image_download: $("image_download").checked,
-    video_download: $("video_download").checked,
-    live_download: $("live_download").checked,
-    cookie: $("cookie").value,
-    proxy: $("proxy").value,
-  };
+  const options = { links: $("links").value, name_fields: selected };
+  TEXT_SETTINGS.forEach((id) => { options[id] = $(id).value; });
+  TOGGLE_SETTINGS.forEach((id) => { options[id] = $(id).checked; });
+  options.folder_name = options.folder_name || "Download";
+  return options;
 }
+
+// ---- persistence (this browser only; the server never sees these) ---- //
+
+function saveSettings() {
+  const { links, ...settings } = collectOptions();
+  // Storage is unavailable in private mode and can be over quota; the UI still
+  // works without persistence, so a failure here is not worth surfacing.
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+
+function loadSettings() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (e) {}
+  if (!saved || typeof saved !== "object") return;
+
+  if (Array.isArray(saved.name_fields)) {
+    const known = AVAILABLE_FIELDS.map(([key]) => key);
+    selected = saved.name_fields.filter((key) => known.includes(key));
+  }
+  TEXT_SETTINGS.forEach((id) => {
+    const value = saved[id];
+    if (typeof value !== "string") return;
+    if (CHOICES[id] && !CHOICES[id].includes(value)) return;
+    $(id).value = value;
+  });
+  TOGGLE_SETTINGS.forEach((id) => {
+    if (typeof saved[id] === "boolean") $(id).checked = saved[id];
+  });
+}
+
+function watchSettings() {
+  [...TEXT_SETTINGS, ...TOGGLE_SETTINGS].forEach((id) => {
+    ["change", "input"].forEach((event) => $(id).addEventListener(event, saveSettings));
+  });
+}
+
+function resetSettings() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  location.reload();  // the markup already carries the defaults
+}
+
+renderDateFormats();
+loadSettings();
+renderChips();
+watchSettings();
 
 let pollTimer = null;
 let currentJob = null;
@@ -434,6 +485,7 @@ function escapeHtml(s) {
 }
 
 $("startBtn").onclick = start;
+$("resetBtn").onclick = (e) => { e.preventDefault(); resetSettings(); };
 </script>
 </body>
 </html>

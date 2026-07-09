@@ -88,6 +88,12 @@ Browser                         webui/app.py                         source.XHS
   engine instance once the job starts. Only this fixed set is accepted, because
   the rendered value lands in file names. File mtimes are unaffected — the
   engine takes those from the raw `时间戳` value, not the formatted string.
+- **Settings persistence lives entirely in the browser.** `index.html` writes the
+  form to `localStorage` under `xhs-webui-settings-v1` on every change and
+  restores it on load; the server is stateless and never sees it. Values are
+  validated against the current `AVAILABLE_FIELDS` / `CHOICES` on restore, so an
+  entry written by an older build is ignored rather than applied. The pasted
+  links are excluded — their `xsec_token` is dated.
 - **`_LogCapture`** — a duck-typed sink assigned to `xhs.print.func`. The
   engine's `source.module.tools.logging` calls `func.write(text, scroll_end=…)`
   for any non-`print` sink, so capturing progress needs only a `write()` method.

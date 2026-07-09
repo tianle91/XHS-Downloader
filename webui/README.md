@@ -34,6 +34,9 @@ modified. **All feature code lives inside this `webui/` folder.**
   `metadata.json` describing every work.
 - **Advanced** — optional Cookie (for restricted / higher-resolution content)
   and proxy.
+- **Remembered settings** — every option above is saved in your browser and
+  restored next time. The pasted links are not (their `xsec_token` goes stale).
+  *Reset to defaults* in the page footer clears them.
 - **Live progress** — per-work progress bar, success/fail counts and a live log.
 
 ## Running
@@ -128,7 +131,7 @@ This is what keeps the Web UI from interfering with your TUI/CLI usage:
 
 | Concern                | Other modes                          | Web UI                                                    |
 | ---------------------- | ------------------------------------ | --------------------------------------------------------- |
-| Settings source        | `Volume/settings.json`               | per-job options from the browser (never reads/writes it)  |
+| Settings source        | `Volume/settings.json`               | the browser's `localStorage` (never reads/writes `settings.json`) |
 | Download location      | `Volume/Download`                    | a unique temp dir per job, deleted after zipping          |
 | History DB (skip)      | `Volume/ExploreID.db` (`download_record`) | disabled — every job downloads fresh, skips nothing   |
 | Metadata DB            | `Volume/.../ExploreData.db` (`record_data`) | disabled — optional `metadata.json` in the ZIP instead |
@@ -139,6 +142,20 @@ Because it reads none of your persisted config and writes to throwaway temp
 dirs, running the Web UI **cannot overwrite your `settings.json`, pollute your
 `Volume/Download` folder, or mark works as "already downloaded"** for the other
 modes.
+
+### Where your settings are stored
+
+The form is remembered **client-side only**, under the `localStorage` key
+`xhs-webui-settings-v1`. The server keeps no per-user state, so nothing is
+shared between browsers and there is no settings file to back up. A saved value
+is dropped on load if it is no longer offered (e.g. a date format removed in a
+later version), so a stale entry cannot leave the form in a broken state.
+
+> **The Cookie is saved too**, verbatim. If you copied it while logged in it
+> contains `web_session` — your XiaoHongShu login — and it will sit in
+> `localStorage` for any script on the origin to read. High-resolution video
+> does **not** require a logged-in account, so a cookie copied from a logged-out
+> session is enough for most users. Use *Reset to defaults* to clear it.
 
 ### Optionally wiring it into `main.py`
 
@@ -157,6 +174,16 @@ elif argv[1].upper() == "WEB":
 ```
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the request/data flow in detail.
+
+## Tests
+
+`webui/tests/` covers `BatchOptions` — the boundary between the browser and the
+engine: which options are accepted, and how they become `XHS(...)` keyword
+arguments. Standard library only, no extra dependencies:
+
+```bash
+uv run python -m unittest discover webui/tests
+```
 
 ## API
 
