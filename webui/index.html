@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>XHS-Downloader · Batch Web UI</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e7eaf0;
+    --muted: #9aa4b2;
+    --brand: #ff2e51;
+    --brand-2: #ff6b81;
+    --ok: #33d17a;
+    --warn: #ffb020;
+    --radius: 14px;
+    --shadow: 0 10px 40px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, rgba(255,46,81,.12), transparent 60%), var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  a { color: var(--brand-2); }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; }
+  header { text-align: center; margin-bottom: 28px; }
+  .logo {
+    display: inline-flex; align-items: center; gap: 12px;
+    font-size: 26px; font-weight: 800; letter-spacing: -.5px;
+  }
+  .logo .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 18px var(--brand); }
+  header p { color: var(--muted); margin: 8px 0 0; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 22px; margin-bottom: 20px;
+  }
+  label.block { display: block; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  textarea, input[type=text] {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    font-size: 14px; font-family: inherit; resize: vertical;
+  }
+  textarea { min-height: 120px; }
+  textarea:focus, input:focus { outline: none; border-color: var(--brand); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .field label.block { margin-bottom: 6px; }
+  select {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 14px;
+  }
+  .section-title { font-size: 15px; font-weight: 700; margin: 4px 0 14px; display:flex; align-items:center; gap:8px; }
+  .section-title small { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    cursor: pointer; user-select: none; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--muted); padding: 7px 12px;
+    border-radius: 999px; font-size: 13px; transition: .12s; position: relative;
+  }
+  .chip:hover { border-color: var(--brand-2); color: var(--text); }
+  .chip.active { background: rgba(255,46,81,.14); border-color: var(--brand); color: #fff; }
+  .chip.active .order { opacity: 1; }
+  .chip .order {
+    opacity: 0; margin-left: 6px; font-size: 11px; background: var(--brand);
+    color:#fff; border-radius: 999px; padding: 0 6px;
+  }
+  .preview { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .preview code { background: var(--panel-2); padding: 3px 8px; border-radius: 6px; color: var(--brand-2); }
+  .preview.warn { color: var(--warn); }
+  .toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 10px; }
+  .switch { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; padding: 6px 0; }
+  .switch input { display: none; }
+  .track { width: 40px; height: 22px; border-radius: 999px; background: var(--border); position: relative; transition: .15s; flex: 0 0 auto; }
+  .track::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:.15s; }
+  .switch input:checked + .track { background: var(--brand); }
+  .switch input:checked + .track::after { transform: translateX(18px); }
+  details.adv { margin-top: 6px; }
+  details.adv summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 6px 0; }
+  .adv-body { margin-top: 12px; display: grid; gap: 16px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--brand); color: #fff; border: none; border-radius: 12px;
+    padding: 14px 22px; font-size: 15px; font-weight: 700; cursor: pointer; width: 100%;
+    transition: .12s;
+  }
+  .btn:hover { background: var(--brand-2); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.secondary { background: var(--ok); }
+  .btn.secondary:hover { filter: brightness(1.08); }
+  .progress-wrap { margin-top: 4px; }
+  .bar { height: 10px; background: var(--panel-2); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--brand), var(--brand-2)); transition: width .3s; }
+  .stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .stats b { color: var(--text); }
+  .log {
+    margin-top: 14px; background: #0b0d11; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; height: 190px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word;
+  }
+  .log .line { padding: 1px 0; }
+  .dest {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 11px 14px; font-size: 13px; overflow-x: auto; white-space: nowrap;
+  }
+  .dest code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--brand-2); }
+  .failed { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 13.5px;
+            background: rgba(255,176,32,.10); border: 1px solid var(--warn); }
+  .failed-head { color: var(--warn); margin-bottom: 8px; }
+  .failed-list {
+    max-height: 120px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; color: var(--muted); word-break: break-all; margin-bottom: 10px;
+  }
+  .btn.ghost { background: transparent; border: 1px solid var(--warn); color: var(--warn); padding: 10px 16px; }
+  .btn.ghost:hover { background: rgba(255,176,32,.14); }
+  .banner { padding: 12px 14px; border-radius: 10px; font-size: 14px; margin-top: 14px; }
+  .banner.err { background: rgba(255,46,81,.12); border: 1px solid var(--brand); color: var(--brand-2); }
+  .banner.ok { background: rgba(51,209,122,.12); border: 1px solid var(--ok); color: var(--ok); }
+  .hidden { display: none !important; }
+  footer { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 30px; }
+  .spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="dot"></span> XHS-Downloader</div>
+    <p>Batch download XiaoHongShu / RedNote works straight to a folder on disk.</p>
+  </header>
+
+  <!-- Links -->
+  <div class="card">
+    <label class="block" for="links">Work links</label>
+    <textarea id="links" placeholder="Paste one or more links, separated by spaces or new lines:
+https://www.xiaohongshu.com/explore/xxxx?xsec_token=xxxx
+https://xhslink.com/xxxx
+https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
+    <div class="hint">Supports <code>explore</code>, <code>discovery/item</code>, <code>user/profile</code> and <code>xhslink.com</code> short links. Invalid text is ignored automatically.</div>
+  </div>
+
+  <!-- Formatting -->
+  <div class="card">
+    <div class="section-title">🗂️ File naming <small>controls how files are named inside each link's folder</small></div>
+
+    <div class="field" style="margin-bottom:18px;">
+      <label class="block">Saving to</label>
+      <div class="dest"><code id="downloadDir">…</code></div>
+      <div class="hint">Every link gets its own folder here, named after the link. A link whose
+        folder already has files is skipped. Set <code>XHS_WEBUI_DOWNLOAD_DIR</code> to save
+        somewhere else.</div>
+    </div>
+
+    <div class="field" style="margin-bottom:18px;">
+      <label class="block">File name format <small style="color:var(--muted);font-weight:400;">(click to add fields — order matters, click again to remove)</small></label>
+      <div class="chips" id="fieldChips"></div>
+      <div class="preview" id="namePreviewWrap">Example file name: <code id="namePreview"></code></div>
+    </div>
+
+    <div class="grid">
+      <div class="field">
+        <label class="block" for="date_format">Date format</label>
+        <select id="date_format"></select>
+        <div class="hint">Used by the publish time &amp; update time fields.</div>
+      </div>
+      <div class="field">
+        <label class="block" for="image_format">Image format</label>
+        <select id="image_format">
+          <option>JPEG</option><option>PNG</option><option>WEBP</option>
+          <option>AUTO</option><option>HEIC</option><option>AVIF</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="block" for="video_preference">Video quality preference</label>
+        <select id="video_preference">
+          <option value="resolution">Resolution first</option>
+          <option value="bitrate">Bitrate first</option>
+          <option value="size">File size first</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="toggles" style="margin-top:18px;">
+      <label class="switch"><input type="checkbox" id="write_mtime"><span class="track"></span> Set file time to publish date</label>
+      <label class="switch"><input type="checkbox" id="include_metadata"><span class="track"></span> Include metadata.json</label>
+      <label class="switch"><input type="checkbox" id="overwrite"><span class="track"></span> Re-download links already saved</label>
+    </div>
+  </div>
+
+  <!-- What to download -->
+  <div class="card">
+    <div class="section-title">⬇️ What to download</div>
+    <div class="toggles">
+      <label class="switch"><input type="checkbox" id="image_download" checked><span class="track"></span> Images &amp; photo albums</label>
+      <label class="switch"><input type="checkbox" id="video_download" checked><span class="track"></span> Videos</label>
+      <label class="switch"><input type="checkbox" id="live_download"><span class="track"></span> Live photos (motion)</label>
+    </div>
+
+    <details class="adv">
+      <summary>Advanced (Cookie &amp; proxy)</summary>
+      <div class="adv-body">
+        <div class="field">
+          <label class="block" for="cookie">Cookie <small style="color:var(--muted);font-weight:400;">optional — improves quality for restricted/high-res content</small></label>
+          <input type="text" id="cookie" placeholder="web_session=...; a1=...; ..." />
+          <div class="hint">Saved in this browser so you don't have to paste it again. If it
+            includes <code>web_session</code>, that is your XiaoHongShu login — high-resolution
+            video does not need it, so a logged-out cookie is enough.</div>
+        </div>
+        <div class="field">
+          <label class="block" for="proxy">Proxy <small style="color:var(--muted);font-weight:400;">optional</small></label>
+          <input type="text" id="proxy" placeholder="http://127.0.0.1:7890" />
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <button class="btn" id="startBtn">⚡ Start batch download</button>
+
+  <!-- Progress -->
+  <div class="card hidden" id="progressCard" style="margin-top:20px;">
+    <div class="section-title" id="progressTitle">Processing…</div>
+    <div class="progress-wrap">
+      <div class="bar"><div id="barFill"></div></div>
+      <div class="stats">
+        <span>Progress: <b id="stProgress">0 / 0</b></span>
+        <span>Saved: <b id="stSuccess" style="color:var(--ok)">0</b></span>
+        <span>Skipped: <b id="stSkipped">0</b></span>
+        <span>Failed: <b id="stFailed" style="color:var(--brand-2)">0</b></span>
+      </div>
+    </div>
+    <div class="log" id="log"></div>
+    <div id="resultBanner"></div>
+
+    <div class="failed hidden" id="failedBox">
+      <div class="failed-head"><b id="failedCount">0</b> link(s) could not be downloaded:</div>
+      <div class="failed-list" id="failedList"></div>
+      <button class="btn ghost" id="retryBtn">↻ Retry failed links</button>
+    </div>
+  </div>
+
+  <footer>
+    Powered by the <a href="https://github.com/JoeanAmier/XHS-Downloader" target="_blank" rel="noopener">XHS-Downloader</a> engine ·
+    For personal, authorised use only.<br />
+    Your options are remembered in this browser · <a href="#" id="resetBtn">Reset to defaults</a>
+  </footer>
+</div>
+
+<script>
+const AVAILABLE_FIELDS = [
+  ["publish_time","Publish time"],["author","Author name"],["title","Title"],
+  ["description","Description"],["id","Work ID"],["type","Work type"],
+  ["author_id","Author ID"],["tags","Tags"],["update_time","Update time"],
+  ["likes","Likes"],["collections","Collections"],["comments","Comments"],["shares","Shares"],
+];
+// Keys must match DATE_FORMATS in app.py; the label is how the sample date
+// 2024-01-31 18:30:45 renders under that pattern.
+const DATE_FORMATS = [
+  ["datetime","2024-01-31_18:30:45"],
+  ["date","2024-01-31"],
+  ["date_compact","20240131"],
+  ["datetime_compact","20240131_183045"],
+  ["date_dotted","2024.01.31"],
+  ["month","2024-01"],
+  ["day_first","31-01-2024"],
+  ["month_first","01-31-2024"],
+];
+// Stand-in values used to render the live file-name example.
+const SAMPLE_VALUES = {
+  author: "Alice", author_id: "5f3ab1c9", title: "Autumn-in-Kyoto",
+  description: "A short caption", id: "65a1b2c3d4", type: "Image",
+  tags: "travel", likes: "1024", collections: "256", comments: "32", shares: "8",
+};
+const DEFAULT_FIELDS = ["publish_time","author","title"];
+
+// Options remembered in this browser between sessions, by input id. The pasted
+// links are deliberately not saved: their xsec_token is dated and goes stale.
+const TEXT_SETTINGS = ["date_format","image_format","video_preference","cookie","proxy"];
+const TOGGLE_SETTINGS = ["write_mtime","include_metadata","overwrite",
+                         "image_download","video_download","live_download"];
+// A saved value is only restored if it is still on offer, so a stale entry from
+// an older build cannot leave a <select> showing nothing.
+const CHOICES = {
+  date_format: DATE_FORMATS.map(([key]) => key),
+  image_format: ["JPEG","PNG","WEBP","AUTO","HEIC","AVIF"],
+  video_preference: ["resolution","bitrate","size"],
+};
+// v2: v1 held folder_name / author_archive, which no longer exist.
+const STORAGE_KEY = "xhs-webui-settings-v2";
+
+let selected = [...DEFAULT_FIELDS];
+let running = false;
+
+const $ = (id) => document.getElementById(id);
+
+// The engine joins name fields with "_" and rewrites ":" to "." in file names.
+function sampleName() {
+  const date = $("date_format").value;
+  const rendered = (DATE_FORMATS.find(([k]) => k === date) || DATE_FORMATS[0])[1];
+  return selected
+    .map((key) => (key === "publish_time" || key === "update_time" ? rendered : SAMPLE_VALUES[key]))
+    .join("_")
+    .replaceAll(":", ".");
+}
+
+function syncStartBtn() {
+  $("startBtn").disabled = running || selected.length === 0;
+  $("retryBtn").disabled = running;
+}
+
+function updatePreview() {
+  const wrap = $("namePreviewWrap");
+  if (selected.length === 0) {
+    wrap.classList.add("warn");
+    wrap.textContent = "Pick at least one field to build the file name.";
+  } else {
+    wrap.classList.remove("warn");
+    wrap.innerHTML = 'Example file name: <code id="namePreview"></code>';
+    $("namePreview").textContent = sampleName() + ".jpg";
+  }
+  syncStartBtn();
+}
+
+function renderChips() {
+  const box = $("fieldChips");
+  box.innerHTML = "";
+  AVAILABLE_FIELDS.forEach(([key, label]) => {
+    const chip = document.createElement("div");
+    const idx = selected.indexOf(key);
+    chip.className = "chip" + (idx >= 0 ? " active" : "");
+    chip.innerHTML = label + (idx >= 0 ? `<span class="order">${idx + 1}</span>` : "");
+    chip.onclick = () => {
+      const at = selected.indexOf(key);
+      if (at >= 0) selected.splice(at, 1);
+      else selected.push(key);
+      renderChips();
+      saveSettings();
+    };
+    box.appendChild(chip);
+  });
+  updatePreview();
+}
+
+function renderDateFormats() {
+  const sel = $("date_format");
+  sel.innerHTML = "";
+  DATE_FORMATS.forEach(([key, example]) => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = example;
+    sel.appendChild(opt);
+  });
+  sel.onchange = updatePreview;
+}
+
+function collectOptions() {
+  const options = { links: $("links").value, name_fields: selected };
+  TEXT_SETTINGS.forEach((id) => { options[id] = $(id).value; });
+  TOGGLE_SETTINGS.forEach((id) => { options[id] = $(id).checked; });
+  return options;
+}
+
+// The server decides where files go; show the resolved path so it is never a
+// mystery which folder just filled up.
+async function showDownloadDir() {
+  try {
+    const res = await fetch("/api/fields");
+    const { download_dir } = await res.json();
+    $("downloadDir").textContent = download_dir;
+  } catch (e) {
+    $("downloadDir").textContent = "(could not reach the server)";
+  }
+}
+
+// ---- persistence (this browser only; the server never sees these) ---- //
+
+function saveSettings() {
+  const { links, ...settings } = collectOptions();
+  // Storage is unavailable in private mode and can be over quota; the UI still
+  // works without persistence, so a failure here is not worth surfacing.
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+
+function loadSettings() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (e) {}
+  if (!saved || typeof saved !== "object") return;
+
+  if (Array.isArray(saved.name_fields)) {
+    const known = AVAILABLE_FIELDS.map(([key]) => key);
+    selected = saved.name_fields.filter((key) => known.includes(key));
+  }
+  TEXT_SETTINGS.forEach((id) => {
+    const value = saved[id];
+    if (typeof value !== "string") return;
+    if (CHOICES[id] && !CHOICES[id].includes(value)) return;
+    $(id).value = value;
+  });
+  TOGGLE_SETTINGS.forEach((id) => {
+    if (typeof saved[id] === "boolean") $(id).checked = saved[id];
+  });
+}
+
+function watchSettings() {
+  [...TEXT_SETTINGS, ...TOGGLE_SETTINGS].forEach((id) => {
+    ["change", "input"].forEach((event) => $(id).addEventListener(event, saveSettings));
+  });
+}
+
+function resetSettings() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  location.reload();  // the markup already carries the defaults
+}
+
+renderDateFormats();
+loadSettings();
+renderChips();
+watchSettings();
+showDownloadDir();
+
+let pollTimer = null;
+let retryLinks = [];
+
+function fmtSize(bytes) {
+  if (!bytes) return "0 B";
+  const u = ["B","KB","MB","GB"]; let i = 0; let n = bytes;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n < 10 && i > 0 ? 1 : 0) + " " + u[i];
+}
+
+async function start() {
+  const opts = collectOptions();
+  if (!opts.links.trim()) { alert("Please paste at least one link."); return; }
+  if (!opts.name_fields.length) { alert("Pick at least one file-name field."); return; }
+
+  running = true;
+  syncStartBtn();
+  $("progressCard").classList.remove("hidden");
+  $("failedBox").classList.add("hidden");
+  $("resultBanner").innerHTML = "";
+  $("log").innerHTML = "";
+  $("barFill").style.width = "0%";
+  $("progressTitle").innerHTML = '<span class="spinner"></span> Processing…';
+  $("progressCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  try {
+    const res = await fetch("/api/jobs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const { detail } = await res.json().catch(() => ({}));
+      // Validation failures (422) return detail as a list of error objects.
+      throw new Error(
+        Array.isArray(detail) ? detail.map(d => d.msg || String(d)).join("; ")
+                              : (detail || "HTTP " + res.status)
+      );
+    }
+    const { job_id } = await res.json();
+    pollTimer = setInterval(() => poll(job_id), 1000);
+    poll(job_id);
+  } catch (e) {
+    finish(false, e.message);
+  }
+}
+
+async function poll(jobId) {
+  try {
+    const res = await fetch("/api/jobs/" + jobId);
+    if (!res.ok) throw new Error("Job expired.");
+    const j = await res.json();
+
+    const pct = j.total ? Math.round((j.done / j.total) * 100) : 0;
+    $("barFill").style.width = pct + "%";
+    $("stProgress").textContent = `${j.done} / ${j.total}`;
+    $("stSuccess").textContent = j.success;
+    $("stSkipped").textContent = j.skipped;
+    $("stFailed").textContent = j.failed;
+
+    const log = $("log");
+    log.innerHTML = (j.logs || []).map(l => `<div class="line">${escapeHtml(l)}</div>`).join("");
+    log.scrollTop = log.scrollHeight;
+
+    if (j.status === "done") { clearInterval(pollTimer); done(j); }
+    else if (j.status === "error") { clearInterval(pollTimer); finish(false, j.error); renderFailed(j); }
+  } catch (e) {
+    clearInterval(pollTimer);
+    finish(false, e.message);
+  }
+}
+
+// Offer to re-run just the links that did not come through. The engine already
+// retries each request internally (max_retry); this is for links that still
+// failed afterwards -- an expired xsec_token, a 403 needing a Cookie, and so on.
+function renderFailed(j) {
+  const links = j.failed_links || [];
+  const box = $("failedBox");
+  retryLinks = links;
+  if (!links.length) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  $("failedCount").textContent = links.length;
+  $("failedList").innerHTML = links.map(l => `<div>${escapeHtml(l)}</div>`).join("");
+  $("retryBtn").textContent = `↻ Retry ${links.length} failed link${links.length === 1 ? "" : "s"}`;
+}
+
+function done(j) {
+  $("barFill").style.width = "100%";
+  $("progressTitle").textContent = j.failed ? "⚠️ Finished with failures" : "✅ Done";
+  const parts = [`Saved <b>${j.file_count}</b> file(s) · ${fmtSize(j.size_bytes)}`];
+  if (j.skipped) parts.push(`${j.skipped} link(s) already downloaded`);
+  if (j.failed) parts.push(`${j.failed} failed`);
+  $("resultBanner").innerHTML =
+    `<div class="banner ok">${parts.join(" · ")}<br />` +
+    `<span style="opacity:.8">in <code>${escapeHtml(j.output_dir)}</code></span></div>`;
+  renderFailed(j);
+  running = false;
+  syncStartBtn();
+}
+
+function finish(ok, msg) {
+  $("progressTitle").textContent = ok ? "✅ Done" : "⚠️ Stopped";
+  if (!ok) $("resultBanner").innerHTML = `<div class="banner err">${escapeHtml(msg || "Something went wrong.")}</div>`;
+  running = false;
+  syncStartBtn();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+$("startBtn").onclick = start;
+$("resetBtn").onclick = (e) => { e.preventDefault(); resetSettings(); };
+$("retryBtn").onclick = () => {
+  if (running || !retryLinks.length) return;
+  // Put them in the box so it is clear which links the new job is running.
+  $("links").value = retryLinks.join("\n");
+  start();
+};
+</script>
+</body>
+</html>
