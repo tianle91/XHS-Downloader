@@ -264,6 +264,11 @@ class BatchOptions(BaseModel):
 def folder_for_link(link: str) -> str:
     """The folder name a link downloads into.
 
+    ``link`` is the link *as pasted*, never the one the engine resolves it to:
+    a ``xhslink.com`` short link redirects to a canonical ``discovery/item``
+    URL, and naming the folder after that would leave the user hunting for a
+    work id they never typed.
+
     The link itself, minus the noise: the scheme and ``www.`` carry nothing, and
     the query string is dropped because a work's ``xsec_token`` is dated -- two
     copies of the same link pasted a day apart must still map to one folder.
@@ -302,29 +307,39 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                 # retargeted per link below.
                 xhs.explore.time_format = options.time_format()
 
-                links = await xhs.extract_links(options.links)
-                if not links:
-                    job.status = "error"
-                    job.error = "No valid XiaoHongShu links were found in the input."
-                    return
+                # One token at a time, rather than one ``extract_links`` call over
+                # the whole blob: that call resolves short links, and we need to
+                # keep each pasted link paired with what it resolves to so the
+                # folder can be named after what the user actually typed.
+                pasted = options.links.split()
+                job.total = len(pasted)
 
-                job.total = len(links)
-                for i, link in enumerate(links):
-                    job.current = link
-                    folder = DOWNLOAD_DIR.joinpath(folder_for_link(link))
+                for token in pasted:
+                    job.current = token
+                    folder = DOWNLOAD_DIR.joinpath(folder_for_link(token))
 
+                    # Checked before resolving, so re-running a batch of short
+                    # links costs no redirect requests at all.
                     if _media_files(folder) and not options.overwrite:
                         job.skipped += 1
-                        job.logs.append(f"Skipping {link}: {folder.name} already has files")
-                        job.done = i + 1
+                        job.logs.append(f"Skipping {token}: {folder.name} already has files")
+                        job.done += 1
+                        continue
+
+                    resolved = await xhs.extract_links(token)
+                    if not resolved:
+                        # Not a link. Prose pasted alongside the URLs is normal,
+                        # so drop it from the denominator rather than fail it.
+                        job.total -= 1
+                        job.logs.append(f"Ignoring {token}: not a XiaoHongShu link")
                         continue
 
                     folder.mkdir(parents=True, exist_ok=True)
                     xhs.download.folder = folder
                     try:
-                        result = await xhs.extract(link, True, None, True)
+                        result = await xhs.extract(resolved[0], True, None, True)
                     except Exception as exc:  # noqa: BLE001 - surface to the user
-                        job.logs.append(f"Error processing {link}: {exc!r}")
+                        job.logs.append(f"Error processing {token}: {exc!r}")
                         result = []
 
                     valid = [item for item in (result or []) if item and item.get("作品ID")]
@@ -336,13 +351,19 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                         job.file_count += len(files)
                         job.size_bytes += sum(p.stat().st_size for p in files)
                     else:
-                        # Recorded so the browser can offer to retry just these.
+                        # The pasted link, not the resolved one: retry re-submits
+                        # exactly what the user gave us.
                         job.failed += 1
-                        job.failed_links.append(link)
+                        job.failed_links.append(token)
                         _discard_if_no_media(folder)
-                    job.done = i + 1
+                    job.done += 1
 
                 job.current = ""
+
+            if not job.total:
+                job.status = "error"
+                job.error = "No valid XiaoHongShu links were found in the input."
+                return
 
             if not job.success and not job.skipped:
                 job.status = "error"

@@ -18,10 +18,12 @@ Building on it? See [`AGENTS.md`](AGENTS.md).
   `explore`, `discovery/item`, `user/profile` and `xhslink.com` short links.
   Invalid text is ignored automatically.
 - **A folder per link** — every link downloads into its own folder, named after
-  the link, inside one shared download directory (`<repo>/Downloads` by
-  default). The scheme, `www.` and the query string are stripped, so
-  `https://www.xiaohongshu.com/explore/65a1b2c3?xsec_token=…` becomes
-  `xiaohongshu.com_explore_65a1b2c3`.
+  the link **exactly as you pasted it**, inside one shared download directory
+  (`<repo>/Downloads` by default). The scheme, `www.` and the query string are
+  stripped, so `https://www.xiaohongshu.com/explore/65a1b2c3?xsec_token=…`
+  becomes `xiaohongshu.com_explore_65a1b2c3`, and `http://xhslink.com/o/3Gx5N7WOIHi`
+  becomes `xhslink.com_o_3Gx5N7WOIHi` — a short link is *not* renamed to the
+  canonical URL it redirects to.
 - **Already-downloaded links are skipped** — because a link maps to a stable
   folder name (the dated `xsec_token` is ignored), re-running a batch only
   fetches what is missing. Tick **Re-download links already saved** to force it.
@@ -77,12 +79,16 @@ Downloads/
 ├── xiaohongshu.com_explore_65a1b2c3/
 │   ├── 2024-01-31_18.30.45_Alice_Autumn-in-Kyoto.jpg
 │   └── metadata.json                     # only with "Include metadata.json"
-└── xhslink.com_a_AbC123/
+└── xhslink.com_o_3Gx5N7WOIHi/
     └── 2024-02-02_09.15.00_Bob_Ramen.mp4
 ```
 
 The **file name format** options apply *inside* each folder. The folder name
-itself always comes from the link.
+itself always comes from the link you pasted, so you can find a work again by
+searching for the link you copied.
+
+Text that is not a link is ignored, so you can paste links with prose around
+them.
 
 Re-running a batch skips any link whose folder already holds files, so you can
 paste the same list again and only fetch what is missing. **Re-download links

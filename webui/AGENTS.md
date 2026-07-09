@@ -37,13 +37,21 @@ instead. The one exception outside this folder is `/Downloads/` in
 2. The job configures a `source.XHS` engine instance and disables the shared
    "download history" DB (`download_record=False`), so the engine never skips
    anything — this UI decides what to skip itself, from the folders on disk.
-3. For each link the engine's file destination is retargeted at
-   `<download dir>/<folder_for_link(link)>`, and progress logs are captured. A
-   link whose folder already holds files is skipped without a request.
-4. A link that yields no work is recorded in the job's `failed_links`, which the
-   browser polls and offers to re-submit as a fresh job. Its folder is removed
-   if nothing was written, so the next run does not mistake it for finished.
-5. The engine's own working directory is a throwaway temp dir — it only ever
+3. The pasted text is split on whitespace and each token handled on its own,
+   rather than passing the whole blob to `extract_links()` once. That call
+   resolves `xhslink.com` short links through a redirect, and the folder must be
+   named after the link the user *typed*, not the canonical URL it resolves to —
+   so the pairing has to be kept. A token that resolves to nothing is not a
+   link: it is logged and dropped from `job.total`, never counted as a failure.
+4. For each link the engine's file destination is retargeted at
+   `<download dir>/<folder_for_link(token)>`, and progress logs are captured. A
+   link whose folder already holds files is skipped *before* it is resolved, so
+   re-running a batch of short links issues no redirect requests at all.
+5. A link that yields no work is recorded in the job's `failed_links` — as
+   pasted, so retry re-submits what the user gave us. The browser polls this and
+   offers to re-submit them as a fresh job. Its folder is removed if nothing was
+   written, so the next run does not mistake it for finished.
+6. The engine's own working directory is a throwaway temp dir — it only ever
    holds `ExploreData.db` — and is deleted when the job ends. Job records are
    dropped from memory after 1 hour.
 

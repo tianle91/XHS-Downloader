@@ -59,13 +59,14 @@ Browser                         webui/app.py                         source.XHS
   │                                  │    XHS(**engine_kwargs) ──────────►│  __init__ (new Manager,
   │                                  │    xhs.print.func = LogCapture     │            HTTP clients)
   │                                  │    xhs.explore.time_format = …     │
-  │                                  │    links = extract_links(text) ───►│  regex parse
-  │  GET /api/jobs/{id}  (poll 1s)   │    for link in links:              │
+  │  GET /api/jobs/{id}  (poll 1s)   │    for token in text.split():      │
   │◄──── {status, done/total, logs,  │      folder = DOWNLOAD_DIR /       │
-  │       skipped, failed_links}     │               folder_for_link(link)│
-  │                                  │      if folder has media: skip     │
+  │       skipped, failed_links}     │               folder_for_link(token)│
+  │                                  │      if folder has media: skip ────┼─ no request
+  │                                  │      extract_links(token) ────────►│  regex parse,
+  │                                  │      if none: prose, total -= 1    │  resolve short link
   │                                  │      xhs.download.folder = folder  │
-  │                                  │      extract(link, download=True)─►│  fetch → Download files
+  │                                  │      extract(resolved, dl=True) ──►│  fetch → Download files
   │                                  │      job.done += 1                 │      into folder
   │                                  │      (optional) metadata.json      │
   │                                  │      else: discard empty folder    │
@@ -98,22 +99,32 @@ ever learns *where* they went.
   engine instance once the job starts. Only this fixed set is accepted, because
   the rendered value lands in file names. File mtimes are unaffected — the
   engine takes those from the raw `时间戳` value, not the formatted string.
-- **`folder_for_link(link)`** — each link downloads into
-  `DOWNLOAD_DIR/<folder_for_link(link)>`. `Download` captures `manager.folder`
-  at construction, so `xhs.download.folder` is reassigned before each link;
-  the engine itself is untouched. The name drops the scheme, `www.` and the
-  query string — the `xsec_token` is dated, so keeping it would give the same
-  work a new folder every day and defeat the skip check — then reduces what is
-  left to one safe path segment. The engine's own folder stays in the temp
-  `work_path`, which is why `ExploreData.db` never appears in `Downloads/`.
+- **`folder_for_link(token)`** — each link downloads into
+  `DOWNLOAD_DIR/<folder_for_link(token)>`, where `token` is the link **as
+  pasted**. `Download` captures `manager.folder` at construction, so
+  `xhs.download.folder` is reassigned before each link; the engine itself is
+  untouched. The name drops the scheme, `www.` and the query string — the
+  `xsec_token` is dated, so keeping it would give the same work a new folder
+  every day and defeat the skip check — then reduces what is left to one safe
+  path segment. The engine's own folder stays in the temp `work_path`, which is
+  why `ExploreData.db` never appears in `Downloads/`.
+- **Per-token resolution.** `extract_links()` resolves `xhslink.com` short links
+  through a redirect, so calling it once over the whole input loses the pairing
+  between what was pasted and what came back. `_run_job` splits the input itself
+  and calls `extract_links()` per token, keeping the pasted form for the folder
+  name and for `failed_links`, and using the resolved form only for `extract()`.
+  A token that resolves to nothing is prose, not a failure: it is logged and
+  decremented from `job.total`.
 - **Skip policy.** A link whose folder already contains a media file is skipped
-  without a request (`overwrite` forces it). Symmetrically, a link that writes
-  nothing has its folder removed — otherwise the next run would see the empty
-  directory and skip a link it never fetched.
-- **`Job.failed_links`** — links that produced no work, whether `extract()`
-  raised or simply returned nothing. Exposed through `GET /api/jobs/{id}` so the
-  browser can offer to re-submit them as a new job. This is a level above the
-  engine's own `max_retry`, which has already been exhausted by this point.
+  *before* it is resolved (`overwrite` forces it), so re-running a batch of short
+  links issues no redirect requests. Symmetrically, a link that writes nothing
+  has its folder removed — otherwise the next run would see the empty directory
+  and skip a link it never fetched.
+- **`Job.failed_links`** — the pasted links that produced no work, whether
+  `extract()` raised or simply returned nothing. Exposed through
+  `GET /api/jobs/{id}` so the browser can offer to re-submit them as a new job.
+  Reported as pasted, so a retry re-submits exactly what the user gave. This is
+  a level above the engine's own `max_retry`, already exhausted by this point.
 - **Settings persistence lives entirely in the browser.** `index.html` writes the
   form to `localStorage` under `xhs-webui-settings-v2` on every change and
   restores it on load; the server is stateless and never sees it. Values are

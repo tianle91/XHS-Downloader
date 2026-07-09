@@ -117,8 +117,20 @@ class FolderForLinkTest(unittest.TestCase):
     def test_derives_the_folder_from_the_link(self) -> None:
         self.assertEqual(folder_for_link(self.WORK), "xiaohongshu.com_explore_65a1b2c3")
 
-    def test_short_links_keep_their_host(self) -> None:
-        self.assertEqual(folder_for_link("https://xhslink.com/a/AbC123"), "xhslink.com_a_AbC123")
+    def test_short_links_are_named_as_pasted(self) -> None:
+        # A short link redirects to a canonical discovery/item URL. The folder
+        # must be named after what the user typed, not what it resolves to, or
+        # they end up hunting for a work id they never saw.
+        self.assertEqual(
+            folder_for_link("http://xhslink.com/o/3Gx5N7WOIHi"),
+            "xhslink.com_o_3Gx5N7WOIHi",
+        )
+
+    def test_short_link_scheme_is_ignored(self) -> None:
+        self.assertEqual(
+            folder_for_link("http://xhslink.com/o/3Gx5N7WOIHi"),
+            folder_for_link("https://xhslink.com/o/3Gx5N7WOIHi"),
+        )
 
     def test_xsec_token_does_not_change_the_folder(self) -> None:
         # The token is dated. The same work pasted a day later must land in the
