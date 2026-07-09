@@ -2,7 +2,8 @@
 
 This document explains how the `webui/` batch downloader is built and how it
 plugs into the rest of XHS-Downloader. For the user-facing feature list see
-[`README.md`](README.md).
+[`README.md`](README.md); for day-to-day contributor notes see
+[`AGENTS.md`](AGENTS.md).
 
 ## Design goals
 
@@ -18,7 +19,7 @@ plugs into the rest of XHS-Downloader. For the user-facing feature list see
 
 | File           | Responsibility                                                    |
 | -------------- | ----------------------------------------------------------------- |
-| `app.py`       | FastAPI app, job model, job runner, ZIP packaging, engine wiring  |
+| `app.py`       | FastAPI app, job model, job runner, engine wiring                 |
 | `index.html`   | Single-page frontend (vanilla JS, polls job status)               |
 | `__main__.py`  | `python -m webui` entry point (uvicorn)                           |
 | `__init__.py`  | Package marker (intentionally does **not** re-export `app`)       |
@@ -42,8 +43,8 @@ plugs into the rest of XHS-Downloader. For the user-facing feature list see
    python main.py  main.py api     main.py mcp     main.py <args>  python -m webui
 ```
 
-The Web UI is a sibling front-end. It adds batching + ZIP packaging on top of
-the engine; it does not change the engine.
+The Web UI is a sibling front-end. It adds batching, per-link folders and a
+skip-what-exists policy on top of the engine; it does not change the engine.
 
 ## Request / data flow
 
@@ -51,24 +52,31 @@ the engine; it does not change the engine.
 Browser                         webui/app.py                         source.XHS
   │                                  │                                    │
   │  POST /api/jobs  ───────────────►│                                    │
-  │   {links, formatting options}    │  create Job, spawn task            │
+  │   {links, naming options}        │  create Job, spawn task            │
   │◄──────────  {job_id}             │                                    │
   │                                  │  async with ENGINE_LOCK:           │
-  │                                  │    mkdtemp() → work_path           │
+  │                                  │    mkdtemp() → work_path (DB only) │
   │                                  │    XHS(**engine_kwargs) ──────────►│  __init__ (new Manager,
   │                                  │    xhs.print.func = LogCapture     │            HTTP clients)
+  │                                  │    xhs.explore.time_format = …     │
   │                                  │    links = extract_links(text) ───►│  regex parse
   │  GET /api/jobs/{id}  (poll 1s)   │    for link in links:              │
-  │◄──── {status, done/total, logs}  │      extract(link, download=True)─►│  fetch → Download files
-  │                                  │      job.done += 1                 │      into work_path/<folder>
-  │                                  │    (optional) write metadata.json  │
-  │                                  │  zip (exclude engine *.db)         │
+  │◄──── {status, done/total, logs,  │      folder = DOWNLOAD_DIR /       │
+  │       skipped, failed_links}     │               folder_for_link(link)│
+  │                                  │      if folder has media: skip     │
+  │                                  │      xhs.download.folder = folder  │
+  │                                  │      extract(link, download=True)─►│  fetch → Download files
+  │                                  │      job.done += 1                 │      into folder
+  │                                  │      (optional) metadata.json      │
+  │                                  │      else: discard empty folder    │
   │                                  │  rmtree(work_path)                 │
   │  GET /api/jobs/{id}              │                                    │
-  │◄──── {ready:true, file_count}    │                                    │
-  │  GET /api/jobs/{id}/download ───►│  FileResponse(zip) ───────────────►│
-  │◄──────────  <folder>.zip         │                                    │
+  │◄──── {status:done, file_count,   │                                    │
+  │       output_dir}                │                                    │
 ```
+
+Files are written to disk, so there is no download endpoint — the browser only
+ever learns *where* they went.
 
 ## Key integration points in `app.py`
 
@@ -77,8 +85,10 @@ Browser                         webui/app.py                         source.XHS
 - **`BatchOptions.engine_kwargs(work_path)`** — translates the browser form into
   the exact keyword arguments of `XHS.__init__`. This is the single place that
   maps UI concepts to engine parameters. It hard-codes the isolation policy:
-  `download_record=False`, `record_data=False`, `script_server=False`,
-  `language="en_US"`, and a per-job temporary `work_path`.
+  `download_record=False`, `record_data=False`, `author_archive=False`,
+  `script_server=False`, `language="en_US"`, and a per-job temporary
+  `work_path`. Note the engine's `folder_name` is a throwaway (`"engine"`) —
+  media never lands there, see `folder_for_link` below.
 - **`NAME_FIELDS`** — maps friendly UI field ids to the engine's `name_format`
   tokens (which the engine validates against `Manager.NAME_KEYS`). The UI never
   sends raw tokens, so it cannot produce an invalid format.
@@ -88,18 +98,24 @@ Browser                         webui/app.py                         source.XHS
   engine instance once the job starts. Only this fixed set is accepted, because
   the rendered value lands in file names. File mtimes are unaffected — the
   engine takes those from the raw `时间戳` value, not the formatted string.
-- **`_zip_name(links)`** — the archive is named `<APP_NAME>_<digest>.zip`, where
-  the digest is a truncated SHA-256 of the submitted links, normalised by
-  splitting on whitespace, de-duplicating and sorting. The same set of links
-  therefore always produces the same file name, and the name cannot contain a
-  path separator regardless of what was pasted. The root folder *inside* the
-  archive is still `folder_name`; the two are independent.
+- **`folder_for_link(link)`** — each link downloads into
+  `DOWNLOAD_DIR/<folder_for_link(link)>`. `Download` captures `manager.folder`
+  at construction, so `xhs.download.folder` is reassigned before each link;
+  the engine itself is untouched. The name drops the scheme, `www.` and the
+  query string — the `xsec_token` is dated, so keeping it would give the same
+  work a new folder every day and defeat the skip check — then reduces what is
+  left to one safe path segment. The engine's own folder stays in the temp
+  `work_path`, which is why `ExploreData.db` never appears in `Downloads/`.
+- **Skip policy.** A link whose folder already contains a media file is skipped
+  without a request (`overwrite` forces it). Symmetrically, a link that writes
+  nothing has its folder removed — otherwise the next run would see the empty
+  directory and skip a link it never fetched.
 - **`Job.failed_links`** — links that produced no work, whether `extract()`
   raised or simply returned nothing. Exposed through `GET /api/jobs/{id}` so the
   browser can offer to re-submit them as a new job. This is a level above the
   engine's own `max_retry`, which has already been exhausted by this point.
 - **Settings persistence lives entirely in the browser.** `index.html` writes the
-  form to `localStorage` under `xhs-webui-settings-v1` on every change and
+  form to `localStorage` under `xhs-webui-settings-v2` on every change and
   restores it on load; the server is stateless and never sees it. Values are
   validated against the current `AVAILABLE_FIELDS` / `CHOICES` on restore, so an
   entry written by an older build is ignored rather than applied. The pasted
@@ -108,10 +124,9 @@ Browser                         webui/app.py                         source.XHS
   engine's `source.module.tools.logging` calls `func.write(text, scroll_end=…)`
   for any non-`print` sink, so capturing progress needs only a `write()` method.
   This is how live logs reach the browser without touching engine code.
-- **`ENGINE_DB_FILES`** — the engine's `DataRecorder` opens
-  `ExploreData.db` in the download folder on `__aenter__` even when
-  `record_data=False`. These bookkeeping DBs are excluded from the ZIP and from
-  the "was anything actually downloaded?" check.
+- **`_media_files(folder)`** — everything a user would call a download, i.e.
+  every file except our own `metadata.json`. It answers both "has this link
+  already been fetched?" and "did this link produce anything?".
 
 ## Concurrency model
 
@@ -124,12 +139,14 @@ jobs (each job's status is tracked independently in the `JOBS` dict).
 
 ## Lifecycle & cleanup
 
-- Each job downloads into `mkdtemp(prefix="xhs_webui_")`; that directory is
-  `rmtree`'d immediately after zipping.
-- Finished ZIPs live in `<tempdir>/xhs_webui_zips/<job_id>.zip` and are removed
-  after `JOB_TTL_SECONDS` (1 hour), swept on every new job.
-- **Downloaded media never lands under the project tree** — it goes to the
-  per-job temp dir and is deleted after zipping.
+- Each job gets a `mkdtemp(prefix="xhs_webui_")` for the engine's `Manager`,
+  which is where `ExploreData.db` lands. No media goes there; it is `rmtree`'d
+  when the job ends.
+- **Downloaded media persists**, in `DOWNLOAD_DIR` (`<repo>/Downloads` by
+  default, or `XHS_WEBUI_DOWNLOAD_DIR`). It belongs to the user and is never
+  cleaned up. The default is git-ignored.
+- Job records are dropped from the `JOBS` dict after `JOB_TTL_SECONDS`
+  (1 hour), swept on every new job.
 - The engine still opens its shared bookkeeping DBs in `Volume/`
   (`ExploreID.db`, `MappingData.db`) on start-up, exactly as the TUI/API/MCP/CLI
   do. With `download_record=False` and no mapping data, the Web UI writes **no

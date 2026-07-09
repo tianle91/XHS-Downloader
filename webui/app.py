@@ -1,9 +1,12 @@
 """XHS-Downloader Web UI.
 
 A self-contained batch-download web interface that sits on top of the existing
-``source.XHS`` engine. It accepts many links at once, exposes rich file/folder
-formatting options, downloads every work and packs the whole result into a
-single ZIP file the user can download from the browser.
+``source.XHS`` engine. It accepts many links at once, exposes rich file naming
+options, and downloads every work straight to a folder on disk.
+
+Every link gets its own folder, named after the link itself, inside one shared
+download directory. A link whose folder already holds files is skipped, so the
+same batch can be re-run cheaply after fixing a few failures.
 
 Everything related to this feature lives inside the ``webui`` folder; nothing
 outside of it is modified. The engine (``source.XHS``) is imported and used
@@ -18,18 +21,19 @@ Run with::
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import tempfile
 import time
-import zipfile
 from dataclasses import dataclass, field
-from hashlib import sha256
 from json import dump
+from os import getenv
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from source import XHS
@@ -40,23 +44,29 @@ from source import XHS
 
 HERE = Path(__file__).resolve().parent
 INDEX_HTML = HERE.joinpath("index.html")
+REPO_ROOT = HERE.parent
 
-# Downloaded archives are named ``<APP_NAME>_<digest>.zip``, where the digest is
-# derived from the requested links. The same links therefore always produce the
-# same file name, and two different batches never collide in the browser's
-# download folder.
-APP_NAME = "XHS-Downloader"
-ZIP_DIGEST_LENGTH = 10
+# Where finished files are written. Every batch writes into this one directory,
+# so re-running a batch finds the folders it already created and skips them.
+# Override with XHS_WEBUI_DOWNLOAD_DIR; a relative value is taken from the repo
+# root, so the default is simply ``<repo>/Downloads``.
+DOWNLOAD_DIR = Path(getenv("XHS_WEBUI_DOWNLOAD_DIR") or REPO_ROOT.joinpath("Downloads"))
+if not DOWNLOAD_DIR.is_absolute():
+    DOWNLOAD_DIR = REPO_ROOT.joinpath(DOWNLOAD_DIR)
+DOWNLOAD_DIR = DOWNLOAD_DIR.resolve()
 
-# Persistent place to keep finished ZIP files until they are downloaded.
-ZIP_DIR = Path(tempfile.gettempdir()).joinpath("xhs_webui_zips")
-ZIP_DIR.mkdir(exist_ok=True)
+# A link's folder name is capped at this many characters. Long enough to keep
+# the host and the work id, short enough to stay well inside PATH_MAX.
+FOLDER_NAME_LENGTH = 80
+
+# Written next to the media when the user asks for it; never counted as media.
+METADATA_NAME = "metadata.json"
 
 # The XHS engine is a singleton and keeps shared HTTP clients / SQLite handles,
 # so only one job may touch it at a time.
 ENGINE_LOCK = asyncio.Lock()
 
-# Finished jobs are kept for this long before their ZIP is cleaned up.
+# Finished job records are dropped from memory after this long.
 JOB_TTL_SECONDS = 60 * 60  # 1 hour
 
 # Mapping between the friendly field ids used by the UI and the tokens the
@@ -97,12 +107,6 @@ DATE_FORMATS: dict[str, str] = {
 }
 DEFAULT_DATE_FORMAT = "datetime"
 
-# Bookkeeping SQLite files the engine may create inside the download folder.
-# They are never useful to the end user, so they are excluded from the ZIP and
-# ignored when deciding whether anything was actually downloaded.
-ENGINE_DB_FILES = {"ExploreData.db", "ExploreID.db", "MappingData.db"}
-
-
 # --------------------------------------------------------------------------- #
 # Job state
 # --------------------------------------------------------------------------- #
@@ -116,12 +120,12 @@ class Job:
     done: int = 0
     success: int = 0
     failed: int = 0
+    skipped: int = 0
     current: str = ""
     logs: list[str] = field(default_factory=list)
     failed_links: list[str] = field(default_factory=list)
     error: str = ""
-    zip_path: Path | None = None
-    zip_name: str = ""
+    output_dir: str = str(DOWNLOAD_DIR)
     file_count: int = 0
     size_bytes: int = 0
     created_at: float = field(default_factory=time.time)
@@ -134,14 +138,14 @@ class Job:
             "done": self.done,
             "success": self.success,
             "failed": self.failed,
+            "skipped": self.skipped,
             "current": self.current,
             "logs": self.logs[-200:],
             "failed_links": self.failed_links,
             "error": self.error,
+            "output_dir": self.output_dir,
             "file_count": self.file_count,
             "size_bytes": self.size_bytes,
-            "zip_name": self.zip_name,
-            "ready": self.status == "done" and self.zip_path is not None,
         }
 
 
@@ -173,14 +177,13 @@ class _LogCapture:
 class BatchOptions(BaseModel):
     links: str = Field(..., description="Whitespace/newline separated XHS links")
 
-    # File / folder formatting options
-    folder_name: str = "Download"
+    # File naming / layout. These apply *inside* a link's folder; the folder
+    # itself is always named after the link.
     name_fields: list[str] = Field(default_factory=lambda: ["publish_time", "author", "title"])
     date_format: str = DEFAULT_DATE_FORMAT
     image_format: str = "JPEG"
     video_preference: str = "resolution"
     folder_mode: bool = False  # each work in its own sub-folder
-    author_archive: bool = False  # group each author's works in a sub-folder
 
     # Download toggles
     image_download: bool = True
@@ -192,6 +195,9 @@ class BatchOptions(BaseModel):
     # Network / auth
     cookie: str = ""
     proxy: str = ""
+
+    # Re-download a link even if its folder already holds files.
+    overwrite: bool = False
 
     @field_validator("name_fields")
     @classmethod
@@ -221,23 +227,28 @@ class BatchOptions(BaseModel):
         if image_format not in VALID_IMAGE_FORMATS:
             image_format = "JPEG"
         preference = self.video_preference if self.video_preference in VALID_VIDEO_PREFERENCE else "resolution"
-        folder_name = self.folder_name.strip() or "Download"
         return {
+            # The engine's own folder is a throwaway: it is where ExploreData.db
+            # lands. Media never goes here -- ``Download.folder`` is retargeted
+            # at each link's folder before it runs. See _run_job.
             "work_path": str(work_path),
-            "folder_name": folder_name,
+            "folder_name": "engine",
             "name_format": self.name_format(),
             "image_format": image_format,
             "video_preference": preference,
             "folder_mode": self.folder_mode,
-            "author_archive": self.author_archive,
+            # Each link already has its own folder, so grouping by author inside
+            # it would only ever add one redundant level.
+            "author_archive": False,
             "image_download": self.image_download,
             "video_download": self.video_download,
             "live_download": self.live_download,
             "write_mtime": self.write_mtime,
             "cookie": self.cookie.strip(),
             "proxy": self.proxy.strip() or None,
-            # Web-UI specific: never skip based on the shared history DB and
-            # never persist per-work data unless the user explicitly asks.
+            # Web-UI specific: never skip based on the shared history DB (this
+            # UI skips on the presence of a link's folder instead) and never
+            # persist per-work data.
             "download_record": False,
             "record_data": False,
             "language": "en_US",
@@ -250,32 +261,46 @@ class BatchOptions(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
-def _zip_directory(source_dir: Path, zip_path: Path) -> tuple[int, int]:
-    """Zip everything under ``source_dir`` (minus engine DBs); return counts."""
-    count = 0
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for item in sorted(source_dir.rglob("*")):
-            if item.is_file() and item.name not in ENGINE_DB_FILES:
-                zf.write(item, item.relative_to(source_dir))
-                count += 1
-    return count, zip_path.stat().st_size if zip_path.exists() else 0
+def folder_for_link(link: str) -> str:
+    """The folder name a link downloads into.
+
+    The link itself, minus the noise: the scheme and ``www.`` carry nothing, and
+    the query string is dropped because a work's ``xsec_token`` is dated -- two
+    copies of the same link pasted a day apart must still map to one folder.
+    Whatever survives is reduced to a single safe path segment.
+    """
+    parts = urlsplit(link if "//" in link else f"//{link}")
+    host = parts.netloc.removeprefix("www.")
+    stem = f"{host}{parts.path}".strip("/")
+    name = re.sub(r"[^\w.-]+", "_", stem, flags=re.UNICODE)
+    # Separators are already gone, so no run of dots can traverse anywhere --
+    # but a segment literally containing ".." has no business existing either.
+    name = re.sub(r"\.{2,}", ".", name).strip("._")
+    return name[:FOLDER_NAME_LENGTH] or "link"
+
+
+def _media_files(folder: Path) -> list[Path]:
+    """Everything a user would call a download: media, not our metadata.json."""
+    if not folder.is_dir():
+        return []
+    return [p for p in folder.rglob("*") if p.is_file() and p.name != METADATA_NAME]
 
 
 async def _run_job(job: Job, options: BatchOptions) -> None:
     async with ENGINE_LOCK:
         job.status = "running"
+        # The engine writes its ExploreData.db under ``work_path``; media does
+        # not go here. Throwaway, so the download folder stays free of DB files.
         work_path = Path(tempfile.mkdtemp(prefix="xhs_webui_"))
-        engine_folder: Path | None = None
-        collected: list[dict] = []
         try:
+            DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
             async with XHS(**options.engine_kwargs(work_path)) as xhs:
                 xhs.print.func = _LogCapture(job)
-                # ``time_format`` is not an XHS(...) parameter, so the chosen
-                # date format is applied to the extractor instance directly. It
-                # drives both the name fields and metadata.json; file mtimes are
-                # unaffected (they come from the raw timestamp).
+                # Neither of these is an XHS(...) parameter, so both are applied
+                # to the live instance. ``time_format`` drives the date fields;
+                # ``download.folder`` is the directory files land in, and is
+                # retargeted per link below.
                 xhs.explore.time_format = options.time_format()
-                engine_folder = Path(xhs.manager.folder)
 
                 links = await xhs.extract_links(options.links)
                 if not links:
@@ -286,37 +311,40 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                 job.total = len(links)
                 for i, link in enumerate(links):
                     job.current = link
+                    folder = DOWNLOAD_DIR.joinpath(folder_for_link(link))
+
+                    if _media_files(folder) and not options.overwrite:
+                        job.skipped += 1
+                        job.logs.append(f"Skipping {link}: {folder.name} already has files")
+                        job.done = i + 1
+                        continue
+
+                    folder.mkdir(parents=True, exist_ok=True)
+                    xhs.download.folder = folder
                     try:
                         result = await xhs.extract(link, True, None, True)
                     except Exception as exc:  # noqa: BLE001 - surface to the user
                         job.logs.append(f"Error processing {link}: {exc!r}")
                         result = []
+
                     valid = [item for item in (result or []) if item and item.get("作品ID")]
                     if valid:
                         job.success += 1
-                        collected.extend(valid)
+                        if options.include_metadata:
+                            _write_metadata(folder, valid)
+                        files = _media_files(folder)
+                        job.file_count += len(files)
+                        job.size_bytes += sum(p.stat().st_size for p in files)
                     else:
                         # Recorded so the browser can offer to retry just these.
                         job.failed += 1
                         job.failed_links.append(link)
+                        _discard_if_no_media(folder)
                     job.done = i + 1
 
                 job.current = ""
 
-                if options.include_metadata and collected:
-                    _write_metadata(engine_folder, collected)
-
-            # ---- packaging (engine context closed) ---- #
-            media = (
-                [
-                    p
-                    for p in engine_folder.rglob("*")
-                    if p.is_file() and p.name not in ENGINE_DB_FILES and p.name != "metadata.json"
-                ]
-                if engine_folder
-                else []
-            )
-            if not media:
+            if not job.success and not job.skipped:
                 job.status = "error"
                 job.error = (
                     "Nothing was downloaded. The links may be invalid/expired, "
@@ -325,14 +353,6 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                 )
                 return
 
-            zip_name = _zip_name(options.links)
-            zip_path = ZIP_DIR.joinpath(f"{job.id}.zip")
-            count, size = await asyncio.to_thread(_zip_directory, engine_folder, zip_path)
-
-            job.zip_path = zip_path
-            job.zip_name = zip_name
-            job.file_count = count
-            job.size_bytes = size
             job.status = "done"
         except Exception as exc:  # noqa: BLE001
             job.status = "error"
@@ -342,6 +362,17 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
             _cleanup_expired()
 
 
+def _discard_if_no_media(folder: Path) -> None:
+    """A link that downloaded nothing must not leave a folder behind.
+
+    Otherwise the next run would find it and skip the link it never fetched.
+    ``folder_mode`` can leave empty per-work subdirectories, so an ``rmdir`` of
+    the top level is not enough.
+    """
+    if not _media_files(folder):
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def _write_metadata(folder: Path, data: list[dict]) -> None:
     """Persist a trimmed metadata.json next to the downloaded files."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -349,31 +380,15 @@ def _write_metadata(folder: Path, data: list[dict]) -> None:
     for item in data:
         entry = {k: v for k, v in item.items() if k not in {"下载地址", "动图地址"}}
         trimmed.append(entry)
-    with folder.joinpath("metadata.json").open("w", encoding="utf-8") as f:
+    with folder.joinpath(METADATA_NAME).open("w", encoding="utf-8") as f:
         dump(trimmed, f, ensure_ascii=False, indent=2, default=str)
 
 
-def _links_digest(links: str) -> str:
-    """A short, stable digest of the links in a request.
-
-    Whitespace, ordering and duplicates do not change the result: the same set
-    of links always yields the same digest, because they always yield the same
-    archive.
-    """
-    unique = sorted(set(links.split()))
-    return sha256("\n".join(unique).encode()).hexdigest()[:ZIP_DIGEST_LENGTH]
-
-
-def _zip_name(links: str) -> str:
-    return f"{APP_NAME}_{_links_digest(links)}.zip"
-
-
 def _cleanup_expired() -> None:
+    """Drop stale job records. The downloaded files themselves are the user's."""
     now = time.time()
     for job_id, job in list(JOBS.items()):
         if now - job.created_at > JOB_TTL_SECONDS:
-            if job.zip_path and job.zip_path.exists():
-                job.zip_path.unlink(missing_ok=True)
             JOBS.pop(job_id, None)
 
 
@@ -397,6 +412,7 @@ async def fields() -> JSONResponse:
             "date_formats": DATE_FORMATS,
             "image_formats": sorted(VALID_IMAGE_FORMATS),
             "video_preferences": sorted(VALID_VIDEO_PREFERENCE),
+            "download_dir": str(DOWNLOAD_DIR),
         }
     )
 
@@ -417,11 +433,3 @@ async def job_status(job_id: str) -> JSONResponse:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found or expired.")
     return JSONResponse(job.public())
-
-
-@app.get("/api/jobs/{job_id}/download")
-async def job_download(job_id: str) -> FileResponse:
-    job = JOBS.get(job_id)
-    if not job or job.status != "done" or not job.zip_path or not job.zip_path.exists():
-        raise HTTPException(status_code=404, detail="Result not ready or expired.")
-    return FileResponse(job.zip_path, media_type="application/zip", filename=job.zip_name)

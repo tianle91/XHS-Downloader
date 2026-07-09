@@ -17,13 +17,12 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from webui.app import (
-    APP_NAME,
     DATE_FORMATS,
     DEFAULT_DATE_FORMAT,
+    FOLDER_NAME_LENGTH,
     NAME_FIELDS,
-    ZIP_DIGEST_LENGTH,
     BatchOptions,
-    _zip_name,
+    folder_for_link,
 )
 
 
@@ -96,48 +95,66 @@ class EngineKwargsTest(unittest.TestCase):
         kwargs = BatchOptions(links="x", image_format="webp").engine_kwargs(Path("/tmp/work"))
         self.assertEqual(kwargs["image_format"], "WEBP")
 
-    def test_blank_folder_name_falls_back(self) -> None:
-        kwargs = BatchOptions(links="x", folder_name="   ").engine_kwargs(Path("/tmp/work"))
-        self.assertEqual(kwargs["folder_name"], "Download")
+    def test_author_archive_is_off(self) -> None:
+        # Each link already has its own folder; grouping by author inside it
+        # would only add a redundant level.
+        self.assertFalse(BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))["author_archive"])
+
+    def test_engine_folder_is_not_the_download_folder(self) -> None:
+        # The engine's folder holds ExploreData.db and lives in a temp dir;
+        # media is redirected per link via xhs.download.folder. See _run_job.
+        kwargs = BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))
+        self.assertEqual(kwargs["folder_name"], "engine")
 
     def test_blank_proxy_becomes_none(self) -> None:
         kwargs = BatchOptions(links="x", proxy="  ").engine_kwargs(Path("/tmp/work"))
         self.assertIsNone(kwargs["proxy"])
 
 
-class ZipNameTest(unittest.TestCase):
-    ONE = "https://www.xiaohongshu.com/explore/aaa"
-    TWO = "https://xhslink.com/bbb"
+class FolderForLinkTest(unittest.TestCase):
+    WORK = "https://www.xiaohongshu.com/explore/65a1b2c3"
 
-    def test_shape_is_app_name_plus_digest(self) -> None:
-        name = _zip_name(self.ONE)
-        self.assertTrue(name.startswith(f"{APP_NAME}_"), name)
-        self.assertTrue(name.endswith(".zip"), name)
-        digest = name[len(APP_NAME) + 1 : -len(".zip")]
-        self.assertEqual(len(digest), ZIP_DIGEST_LENGTH)
-        self.assertTrue(digest.isalnum())
+    def test_derives_the_folder_from_the_link(self) -> None:
+        self.assertEqual(folder_for_link(self.WORK), "xiaohongshu.com_explore_65a1b2c3")
 
-    def test_same_links_give_the_same_name(self) -> None:
-        self.assertEqual(_zip_name(self.ONE), _zip_name(self.ONE))
+    def test_short_links_keep_their_host(self) -> None:
+        self.assertEqual(folder_for_link("https://xhslink.com/a/AbC123"), "xhslink.com_a_AbC123")
 
-    def test_different_links_give_different_names(self) -> None:
-        self.assertNotEqual(_zip_name(self.ONE), _zip_name(self.TWO))
+    def test_xsec_token_does_not_change_the_folder(self) -> None:
+        # The token is dated. The same work pasted a day later must land in the
+        # folder it already has, or the skip check would never fire.
+        tokened = f"{self.WORK}?xsec_token=ABC123&source=web"
+        self.assertEqual(folder_for_link(tokened), folder_for_link(self.WORK))
 
-    def test_name_ignores_order_whitespace_and_duplicates(self) -> None:
-        # All of these produce the same archive, so they get the same name.
-        canonical = _zip_name(f"{self.ONE} {self.TWO}")
+    def test_scheme_and_www_are_noise(self) -> None:
         for variant in (
-            f"{self.TWO} {self.ONE}",  # reordered
-            f"  {self.ONE}\n\n{self.TWO}  ",  # padded and newline separated
-            f"{self.ONE} {self.TWO} {self.ONE}",  # duplicated
+            "http://www.xiaohongshu.com/explore/65a1b2c3",
+            "https://xiaohongshu.com/explore/65a1b2c3",
+            "www.xiaohongshu.com/explore/65a1b2c3",
         ):
             with self.subTest(variant=variant):
-                self.assertEqual(_zip_name(variant), canonical)
+                self.assertEqual(folder_for_link(variant), folder_for_link(self.WORK))
 
-    def test_name_is_a_safe_file_name(self) -> None:
-        name = _zip_name("https://a/b?c=d&e=f  ../../etc/passwd")
-        self.assertNotIn("/", name)
-        self.assertNotIn("..", name)
+    def test_different_works_get_different_folders(self) -> None:
+        other = "https://www.xiaohongshu.com/explore/99z9z9z9"
+        self.assertNotEqual(folder_for_link(other), folder_for_link(self.WORK))
+
+    def test_result_is_a_single_safe_path_segment(self) -> None:
+        for hostile in ("http://../../etc/passwd", "https://a/../../b", "https://a/b\\c"):
+            with self.subTest(link=hostile):
+                name = folder_for_link(hostile)
+                self.assertNotIn("/", name)
+                self.assertNotIn("\\", name)
+                self.assertNotIn("..", name)
+                self.assertFalse(name.startswith("."))
+
+    def test_name_is_bounded(self) -> None:
+        name = folder_for_link("https://xiaohongshu.com/" + "a" * 500)
+        self.assertLessEqual(len(name), FOLDER_NAME_LENGTH)
+
+    def test_never_empty(self) -> None:
+        self.assertTrue(folder_for_link("https://"))
+        self.assertTrue(folder_for_link("///"))
 
 
 if __name__ == "__main__":

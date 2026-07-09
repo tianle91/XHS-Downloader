@@ -1,8 +1,8 @@
 # XHS-Downloader · Batch Web UI
 
 A self-contained web interface for **batch downloading** XiaoHongShu / RedNote
-works with rich file & folder formatting options. Everything is packed into a
-single **ZIP file** that the user downloads from the browser.
+works with rich file naming options. Files are written **straight to a folder on
+disk** — one folder per link, all inside a single download directory.
 
 It is inspired by tools like [dlbunny](https://dlbunny.com/en/xhs) and is built
 directly on top of the existing `source.XHS` engine — no engine code is
@@ -10,19 +10,25 @@ modified. **All feature code lives inside this `webui/` folder.**
 
 ![Web UI screenshot](screenshot.png)
 
+Building on it? See [`AGENTS.md`](AGENTS.md).
+
 ## Features
 
 - **Batch input** — paste many links at once (spaces or new lines). Supports
   `explore`, `discovery/item`, `user/profile` and `xhslink.com` short links.
   Invalid text is ignored automatically.
-- **One ZIP download** — every downloaded work is packed into a single ZIP,
-  named `XHS-Downloader_<digest>.zip`. The digest is derived from the links you
-  submitted, so the same batch always lands under the same file name and two
-  different batches never overwrite each other in your downloads folder.
+- **A folder per link** — every link downloads into its own folder, named after
+  the link, inside one shared download directory (`<repo>/Downloads` by
+  default). The scheme, `www.` and the query string are stripped, so
+  `https://www.xiaohongshu.com/explore/65a1b2c3?xsec_token=…` becomes
+  `xiaohongshu.com_explore_65a1b2c3`.
+- **Already-downloaded links are skipped** — because a link maps to a stable
+  folder name (the dated `xsec_token` is ignored), re-running a batch only
+  fetches what is missing. Tick **Re-download links already saved** to force it.
 - **Partial failures are recoverable** — links that could not be downloaded are
   listed when the job ends, with a **Retry failed links** button that re-runs
-  only those. The ZIP always contains just the works that succeeded, so you can
-  take what you have and retry the rest separately.
+  only those. A link that downloads nothing leaves no folder behind, so it is
+  never mistaken for "already done".
 - **File name builder** — click fields (publish time, author, title, likes,
   tags, …) in the order you want them; an example file name updates live. Click
   a field again to remove it; clear them all to start a new order from scratch.
@@ -30,20 +36,19 @@ modified. **All feature code lives inside this `webui/` folder.**
   `2024-01-31_18:30:45`, `2024-01-31`, `20240131`, `2024.01.31`, `2024-01`,
   `31-01-2024`, … It applies to file names and `metadata.json`; file mtimes are
   always the exact publish timestamp.
-- **Folder organisation** — optionally put each work in its own sub-folder
-  and/or group works by author.
 - **Format control** — choose image format (JPEG / PNG / WEBP / AUTO / HEIC /
   AVIF) and video quality preference (resolution / bitrate / size).
 - **Media toggles** — enable/disable images, videos and live photos
   independently.
-- **Extras** — write the publish date to file mtimes, and optionally include a
-  `metadata.json` describing every work.
+- **Extras** — put each work in its own sub-folder, write the publish date to
+  file mtimes, and optionally include a `metadata.json` describing every work.
 - **Advanced** — optional Cookie (for restricted / higher-resolution content)
   and proxy.
 - **Remembered settings** — every option above is saved in your browser and
   restored next time. The pasted links are not (their `xsec_token` goes stale).
   *Reset to defaults* in the page footer clears them.
-- **Live progress** — per-work progress bar, success/fail counts and a live log.
+- **Live progress** — per-work progress bar, saved/skipped/failed counts and a
+  live log.
 
 ## Running
 
@@ -61,148 +66,57 @@ Then open <http://127.0.0.1:5557>.
 
 > **That's the only command you need.** The Web UI runs the `XHS` engine
 > **in-process**, so you do **not** have to start `uv run python main.py api`
-> (the `:5556` REST server) or any other mode first. The `/api/*` routes you see
-> below are this server's own endpoints on `:5557`, not the project's API mode —
-> the two are independent and never talk to each other.
+> (the `:5556` REST server) or any other mode first.
 
-Configuration via environment variables:
+## Where files go
 
-| Variable          | Default     | Description        |
-| ----------------- | ----------- | ------------------ |
-| `XHS_WEBUI_HOST`  | `127.0.0.1` | Bind host          |
-| `XHS_WEBUI_PORT`  | `5557`      | Bind port          |
+Everything lands in one directory, `<repo>/Downloads` unless you say otherwise:
+
+```
+Downloads/
+├── xiaohongshu.com_explore_65a1b2c3/
+│   ├── 2024-01-31_18.30.45_Alice_Autumn-in-Kyoto.jpg
+│   └── metadata.json                     # only with "Include metadata.json"
+└── xhslink.com_a_AbC123/
+    └── 2024-02-02_09.15.00_Bob_Ramen.mp4
+```
+
+The **file name format** options apply *inside* each folder. The folder name
+itself always comes from the link.
+
+Re-running a batch skips any link whose folder already holds files, so you can
+paste the same list again and only fetch what is missing. **Re-download links
+already saved** overrides that; it writes new files alongside whatever is
+already in the folder rather than emptying it first.
+
+## Configuration
+
+| Variable                 | Default             | Description             |
+| ------------------------ | ------------------- | ----------------------- |
+| `XHS_WEBUI_HOST`         | `127.0.0.1`         | Bind host               |
+| `XHS_WEBUI_PORT`         | `5557`              | Bind port               |
+| `XHS_WEBUI_DOWNLOAD_DIR` | `<repo>/Downloads`  | Where files are written |
+
+`XHS_WEBUI_DOWNLOAD_DIR` may be absolute, or relative to the repository root.
+The resolved path is shown at the top of the page.
 
 > The default host `127.0.0.1` keeps the server local-only. Set
 > `XHS_WEBUI_HOST=0.0.0.0` if you intentionally want to expose it on your
-> network.
+> network — note that the download directory is chosen by the *server*, never by
+> the browser, so a remote client cannot pick where files land.
 
-## How it works
+## Your settings, and your Cookie
 
-1. The browser posts the links + options to `POST /api/jobs`, which starts a
-   background job and returns a `job_id`.
-2. The job configures a `source.XHS` engine instance with a **unique temporary
-   working directory**, disables the shared "download history" DB
-   (`download_record=False`) so nothing is ever skipped, and downloads every
-   link, capturing progress logs.
-3. Any link that yields no work is recorded in the job's `failed_links`, which
-   the browser polls and offers to re-submit as a fresh job.
-4. When finished, the working folder is zipped (engine bookkeeping DBs
-   excluded) and served from `GET /api/jobs/{id}/download`. Only what actually
-   downloaded is in there, so a partial batch still produces a usable archive.
-5. The temporary working folder is deleted immediately after zipping; finished
-   ZIPs are cleaned up automatically after 1 hour.
-
-Because the engine is a process-wide singleton with shared HTTP clients, jobs
-are serialised with an `asyncio` lock — multiple users can queue jobs, and they
-run one after another.
-
-## Integration with XHS-Downloader
-
-XHS-Downloader is really **one engine with several front-ends**. The engine is
-`source.application.app.XHS`; `main.py` dispatches to the different front-ends:
-
-| Command                         | Front-end       | Serves                     |
-| ------------------------------- | --------------- | -------------------------- |
-| `uv run python main.py`         | TUI (Textual)   | terminal app               |
-| `uv run python main.py api`     | FastAPI REST    | `:5556/xhs/detail`         |
-| `uv run python main.py mcp`     | MCP server      | `:5556/mcp/`               |
-| `uv run python main.py <args>`  | CLI (click)     | terminal                   |
-| **`uv run python -m webui`**    | **Web UI**      | **`:5557` (this folder)**  |
-
-The Web UI is **just another consumer of the same engine** — it imports `XHS`
-and calls the identical pipeline the other modes use:
-
-```
-webui/app.py
-   └─ from source import XHS
-        XHS(**engine_kwargs)          # same constructor the TUI/API/MCP/CLI call
-        └─ xhs.extract_links(text)    # same link parsing (explore/item/user/xhslink)
-        └─ xhs.extract(link, ...)     # same Download / Image / Video / Html modules
-```
-
-### What it shares with the other modes
-
-- **The engine and every option.** `folder_name`, `name_format`, `image_format`,
-  `video_preference`, `folder_mode`, `author_archive`, `image/video/live_download`,
-  `write_mtime`, `cookie`, `proxy` are the exact `XHS(...)` parameters documented
-  in the project README's *配置文件 / Settings* table.
-- **The `name_format` field tokens.** The UI's friendly ids (`title`, `author`,
-  `likes`, …) map to the same Chinese tokens the engine expects, via
-  `NAME_FIELDS` in `app.py`. A format built in the UI behaves identically to one
-  set in `settings.json`.
-- **Link parsing and download logic.** No copies or re-implementations — the UI
-  reuses `extract_links()` and `extract()` verbatim, so any engine fix or new
-  supported link type is picked up automatically.
-
-### What it deliberately does *not* share (isolation)
-
-This is what keeps the Web UI from interfering with your TUI/CLI usage:
-
-| Concern                | Other modes                          | Web UI                                                    |
-| ---------------------- | ------------------------------------ | --------------------------------------------------------- |
-| Settings source        | `Volume/settings.json`               | the browser's `localStorage` (never reads/writes `settings.json`) |
-| Download location      | `Volume/Download`                    | a unique temp dir per job, deleted after zipping          |
-| History DB (skip)      | `Volume/ExploreID.db` (`download_record`) | disabled — every job downloads fresh, skips nothing   |
-| Metadata DB            | `Volume/.../ExploreData.db` (`record_data`) | disabled — optional `metadata.json` in the ZIP instead |
-| Date format            | `Explore.time_format` (`%Y-%m-%d_%H:%M:%S`) | chosen per job, set on the engine instance at run time |
-| Concurrency            | one session per process              | jobs serialised with an `asyncio` lock (engine is a singleton) |
-
-Because it reads none of your persisted config and writes to throwaway temp
-dirs, running the Web UI **cannot overwrite your `settings.json`, pollute your
-`Volume/Download` folder, or mark works as "already downloaded"** for the other
-modes.
-
-### Where your settings are stored
-
-The form is remembered **client-side only**, under the `localStorage` key
-`xhs-webui-settings-v1`. The server keeps no per-user state, so nothing is
-shared between browsers and there is no settings file to back up. A saved value
-is dropped on load if it is no longer offered (e.g. a date format removed in a
-later version), so a stale entry cannot leave the form in a broken state.
+The form is remembered **in your browser only**. The server keeps no per-user
+state, so nothing is shared between browsers and there is no settings file to
+back up. Your `settings.json` is never read or written, and the Web UI cannot
+mark works as "already downloaded" for the TUI/CLI.
 
 > **The Cookie is saved too**, verbatim. If you copied it while logged in it
-> contains `web_session` — your XiaoHongShu login — and it will sit in
-> `localStorage` for any script on the origin to read. High-resolution video
-> does **not** require a logged-in account, so a cookie copied from a logged-out
+> contains `web_session` — your XiaoHongShu login — and it will sit in browser
+> storage for any script on the origin to read. High-resolution video does
+> **not** require a logged-in account, so a cookie copied from a logged-out
 > session is enough for most users. Use *Reset to defaults* to clear it.
-
-### Optionally wiring it into `main.py`
-
-To keep every feature in a single folder, the Web UI ships as a standalone
-`python -m webui` entry point and does **not** modify `main.py`. If you later
-want a `uv run python main.py web` subcommand, it is a small, self-contained addition
-(the dispatcher in `main.py` already branches on `argv[1]`):
-
-```python
-# in main.py, in the __main__ block alongside the api / mcp branches.
-# webui.__main__.main() is synchronous (it calls uvicorn.run itself),
-# so it does not need asyncio.run():
-elif argv[1].upper() == "WEB":
-    from webui.__main__ import main as run_web
-    run_web()
-```
-
-See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the request/data flow in detail.
-
-## Tests
-
-`webui/tests/` covers `BatchOptions` — the boundary between the browser and the
-engine: which options are accepted, and how they become `XHS(...)` keyword
-arguments. Standard library only, no extra dependencies:
-
-```bash
-uv run python -m unittest discover webui/tests
-```
-
-## API
-
-| Method | Path                        | Purpose                          |
-| ------ | --------------------------- | -------------------------------- |
-| `GET`  | `/`                         | The web UI                       |
-| `GET`  | `/api/fields`               | Available formatting field ids   |
-| `POST` | `/api/jobs`                 | Start a batch job → `{job_id}`   |
-| `GET`  | `/api/jobs/{id}`            | Job status / progress / logs     |
-| `GET`  | `/api/jobs/{id}/download`   | Download the resulting ZIP       |
 
 ## Notes & limitations
 
@@ -218,5 +132,7 @@ uv run python -m unittest discover webui/tests
   simply fail again.
 - XHS links carry a dated `xsec_token`; use freshly-copied links for best
   results.
+- Jobs run one at a time. The engine is a process-wide singleton with shared
+  HTTP clients, so concurrent jobs would trample each other; they queue instead.
 - For personal, authorised use only. Respect XiaoHongShu's terms and the
   original creators' rights.

@@ -105,6 +105,11 @@
     font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word;
   }
   .log .line { padding: 1px 0; }
+  .dest {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 11px 14px; font-size: 13px; overflow-x: auto; white-space: nowrap;
+  }
+  .dest code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--brand-2); }
   .failed { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 13.5px;
             background: rgba(255,176,32,.10); border: 1px solid var(--warn); }
   .failed-head { color: var(--warn); margin-bottom: 8px; }
@@ -127,7 +132,7 @@
 <div class="wrap">
   <header>
     <div class="logo"><span class="dot"></span> XHS-Downloader</div>
-    <p>Batch download XiaoHongShu / RedNote works and get everything in one ZIP file.</p>
+    <p>Batch download XiaoHongShu / RedNote works straight to a folder on disk.</p>
   </header>
 
   <!-- Links -->
@@ -142,14 +147,14 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
 
   <!-- Formatting -->
   <div class="card">
-    <div class="section-title">🗂️ File &amp; folder formatting <small>controls how files are named and organised inside the ZIP</small></div>
+    <div class="section-title">🗂️ File naming <small>controls how files are named inside each link's folder</small></div>
 
     <div class="field" style="margin-bottom:18px;">
-      <label class="block" for="folder_name">Root folder</label>
-      <input type="text" id="folder_name" value="Download" />
-      <div class="hint">Top-level folder inside the archive. The ZIP itself is named
-        <code>XHS-Downloader_&lt;hash of your links&gt;.zip</code>, so the same links always
-        produce the same file name.</div>
+      <label class="block">Saving to</label>
+      <div class="dest"><code id="downloadDir">…</code></div>
+      <div class="hint">Every link gets its own folder here, named after the link. A link whose
+        folder already has files is skipped. Set <code>XHS_WEBUI_DOWNLOAD_DIR</code> to save
+        somewhere else.</div>
     </div>
 
     <div class="field" style="margin-bottom:18px;">
@@ -183,9 +188,9 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
 
     <div class="toggles" style="margin-top:18px;">
       <label class="switch"><input type="checkbox" id="folder_mode"><span class="track"></span> Each work in its own sub-folder</label>
-      <label class="switch"><input type="checkbox" id="author_archive"><span class="track"></span> Group works by author</label>
       <label class="switch"><input type="checkbox" id="write_mtime"><span class="track"></span> Set file time to publish date</label>
       <label class="switch"><input type="checkbox" id="include_metadata"><span class="track"></span> Include metadata.json</label>
+      <label class="switch"><input type="checkbox" id="overwrite"><span class="track"></span> Re-download links already saved</label>
     </div>
   </div>
 
@@ -225,7 +230,8 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
       <div class="bar"><div id="barFill"></div></div>
       <div class="stats">
         <span>Progress: <b id="stProgress">0 / 0</b></span>
-        <span>Success: <b id="stSuccess" style="color:var(--ok)">0</b></span>
+        <span>Saved: <b id="stSuccess" style="color:var(--ok)">0</b></span>
+        <span>Skipped: <b id="stSkipped">0</b></span>
         <span>Failed: <b id="stFailed" style="color:var(--brand-2)">0</b></span>
       </div>
     </div>
@@ -237,8 +243,6 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
       <div class="failed-list" id="failedList"></div>
       <button class="btn ghost" id="retryBtn">↻ Retry failed links</button>
     </div>
-
-    <button class="btn secondary hidden" id="downloadBtn" style="margin-top:14px;">⬇️ Download ZIP</button>
   </div>
 
   <footer>
@@ -277,8 +281,8 @@ const DEFAULT_FIELDS = ["publish_time","author","title"];
 
 // Options remembered in this browser between sessions, by input id. The pasted
 // links are deliberately not saved: their xsec_token is dated and goes stale.
-const TEXT_SETTINGS = ["folder_name","date_format","image_format","video_preference","cookie","proxy"];
-const TOGGLE_SETTINGS = ["folder_mode","author_archive","write_mtime","include_metadata",
+const TEXT_SETTINGS = ["date_format","image_format","video_preference","cookie","proxy"];
+const TOGGLE_SETTINGS = ["folder_mode","write_mtime","include_metadata","overwrite",
                          "image_download","video_download","live_download"];
 // A saved value is only restored if it is still on offer, so a stale entry from
 // an older build cannot leave a <select> showing nothing.
@@ -287,7 +291,8 @@ const CHOICES = {
   image_format: ["JPEG","PNG","WEBP","AUTO","HEIC","AVIF"],
   video_preference: ["resolution","bitrate","size"],
 };
-const STORAGE_KEY = "xhs-webui-settings-v1";
+// v2: v1 held folder_name / author_archive, which no longer exist.
+const STORAGE_KEY = "xhs-webui-settings-v2";
 
 let selected = [...DEFAULT_FIELDS];
 let running = false;
@@ -358,8 +363,19 @@ function collectOptions() {
   const options = { links: $("links").value, name_fields: selected };
   TEXT_SETTINGS.forEach((id) => { options[id] = $(id).value; });
   TOGGLE_SETTINGS.forEach((id) => { options[id] = $(id).checked; });
-  options.folder_name = options.folder_name || "Download";
   return options;
+}
+
+// The server decides where files go; show the resolved path so it is never a
+// mystery which folder just filled up.
+async function showDownloadDir() {
+  try {
+    const res = await fetch("/api/fields");
+    const { download_dir } = await res.json();
+    $("downloadDir").textContent = download_dir;
+  } catch (e) {
+    $("downloadDir").textContent = "(could not reach the server)";
+  }
 }
 
 // ---- persistence (this browser only; the server never sees these) ---- //
@@ -406,9 +422,9 @@ renderDateFormats();
 loadSettings();
 renderChips();
 watchSettings();
+showDownloadDir();
 
 let pollTimer = null;
-let currentJob = null;
 let retryLinks = [];
 
 function fmtSize(bytes) {
@@ -426,7 +442,6 @@ async function start() {
   running = true;
   syncStartBtn();
   $("progressCard").classList.remove("hidden");
-  $("downloadBtn").classList.add("hidden");
   $("failedBox").classList.add("hidden");
   $("resultBanner").innerHTML = "";
   $("log").innerHTML = "";
@@ -448,7 +463,6 @@ async function start() {
       );
     }
     const { job_id } = await res.json();
-    currentJob = job_id;
     pollTimer = setInterval(() => poll(job_id), 1000);
     poll(job_id);
   } catch (e) {
@@ -466,6 +480,7 @@ async function poll(jobId) {
     $("barFill").style.width = pct + "%";
     $("stProgress").textContent = `${j.done} / ${j.total}`;
     $("stSuccess").textContent = j.success;
+    $("stSkipped").textContent = j.skipped;
     $("stFailed").textContent = j.failed;
 
     const log = $("log");
@@ -497,16 +512,12 @@ function renderFailed(j) {
 function done(j) {
   $("barFill").style.width = "100%";
   $("progressTitle").textContent = j.failed ? "⚠️ Finished with failures" : "✅ Done";
+  const parts = [`Saved <b>${j.file_count}</b> file(s) · ${fmtSize(j.size_bytes)}`];
+  if (j.skipped) parts.push(`${j.skipped} link(s) already downloaded`);
+  if (j.failed) parts.push(`${j.failed} failed`);
   $("resultBanner").innerHTML =
-    `<div class="banner ok">Packed <b>${j.file_count}</b> file(s) · ${fmtSize(j.size_bytes)} · ` +
-    `${j.success} work(s) succeeded${j.failed ? `, ${j.failed} failed` : ""}.</div>`;
-  const btn = $("downloadBtn");
-  btn.classList.remove("hidden");
-  // The ZIP only ever holds what downloaded, so this is the "successful only" path.
-  btn.textContent = j.failed
-    ? `⬇️ Download the ${j.success} successful work(s)`
-    : `⬇️ Download ${j.zip_name}`;
-  btn.onclick = () => { window.location.href = "/api/jobs/" + currentJob + "/download"; };
+    `<div class="banner ok">${parts.join(" · ")}<br />` +
+    `<span style="opacity:.8">in <code>${escapeHtml(j.output_dir)}</code></span></div>`;
   renderFailed(j);
   running = false;
   syncStartBtn();
