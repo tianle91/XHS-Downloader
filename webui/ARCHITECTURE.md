@@ -82,6 +82,12 @@ Browser                         webui/app.py                         source.XHS
 - **`NAME_FIELDS`** — maps friendly UI field ids to the engine's `name_format`
   tokens (which the engine validates against `Manager.NAME_KEYS`). The UI never
   sends raw tokens, so it cannot produce an invalid format.
+- **`DATE_FORMATS`** — the date/time presets offered for the publish-time and
+  update-time fields. `time_format` is not an `XHS(...)` parameter, so the
+  chosen strftime pattern is assigned to `xhs.explore.time_format` on the live
+  engine instance once the job starts. Only this fixed set is accepted, because
+  the rendered value lands in file names. File mtimes are unaffected — the
+  engine takes those from the raw `时间戳` value, not the formatted string.
 - **`_LogCapture`** — a duck-typed sink assigned to `xhs.print.func`. The
   engine's `source.module.tools.logging` calls `func.write(text, scroll_end=…)`
   for any non-`print` sink, so capturing progress needs only a `write()` method.

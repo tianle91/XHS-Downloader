@@ -29,7 +29,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from source import XHS
 
@@ -72,6 +72,22 @@ NAME_FIELDS: dict[str, str] = {
 
 VALID_IMAGE_FORMATS = {"AUTO", "PNG", "WEBP", "JPEG", "HEIC", "AVIF"}
 VALID_VIDEO_PREFERENCE = {"resolution", "bitrate", "size"}
+
+# How the ``publish_time`` / ``update_time`` fields are rendered. The engine
+# formats them with ``Explore.time_format`` (a strftime pattern) before they
+# reach either the file name or metadata.json. Only this fixed set is offered:
+# the value ends up in file names, so arbitrary patterns are not accepted.
+DATE_FORMATS: dict[str, str] = {
+    "datetime": "%Y-%m-%d_%H:%M:%S",
+    "date": "%Y-%m-%d",
+    "date_compact": "%Y%m%d",
+    "datetime_compact": "%Y%m%d_%H%M%S",
+    "date_dotted": "%Y.%m.%d",
+    "month": "%Y-%m",
+    "day_first": "%d-%m-%Y",
+    "month_first": "%m-%d-%Y",
+}
+DEFAULT_DATE_FORMAT = "datetime"
 
 # Bookkeeping SQLite files the engine may create inside the download folder.
 # They are never useful to the end user, so they are excluded from the ZIP and
@@ -150,6 +166,7 @@ class BatchOptions(BaseModel):
     # File / folder formatting options
     folder_name: str = "Download"
     name_fields: list[str] = Field(default_factory=lambda: ["publish_time", "author", "title"])
+    date_format: str = DEFAULT_DATE_FORMAT
     image_format: str = "JPEG"
     video_preference: str = "resolution"
     folder_mode: bool = False  # each work in its own sub-folder
@@ -166,9 +183,28 @@ class BatchOptions(BaseModel):
     cookie: str = ""
     proxy: str = ""
 
+    @field_validator("name_fields")
+    @classmethod
+    def _validate_name_fields(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("Select at least one file-name field.")
+        if unknown := [f for f in value if f not in NAME_FIELDS]:
+            raise ValueError(f"Unknown file-name field(s): {', '.join(unknown)}")
+        return value
+
+    @field_validator("date_format")
+    @classmethod
+    def _validate_date_format(cls, value: str) -> str:
+        if value not in DATE_FORMATS:
+            raise ValueError(f"Unknown date format: {value}")
+        return value
+
     def name_format(self) -> str:
-        tokens = [NAME_FIELDS[f] for f in self.name_fields if f in NAME_FIELDS]
-        return " ".join(tokens) or "发布时间 作者昵称 作品标题"
+        return " ".join(NAME_FIELDS[f] for f in self.name_fields)
+
+    def time_format(self) -> str:
+        """The strftime pattern the engine should render date fields with."""
+        return DATE_FORMATS[self.date_format]
 
     def engine_kwargs(self, work_path: Path) -> dict:
         image_format = self.image_format.upper()
@@ -224,6 +260,11 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
         try:
             async with XHS(**options.engine_kwargs(work_path)) as xhs:
                 xhs.print.func = _LogCapture(job)
+                # ``time_format`` is not an XHS(...) parameter, so the chosen
+                # date format is applied to the extractor instance directly. It
+                # drives both the name fields and metadata.json; file mtimes are
+                # unaffected (they come from the raw timestamp).
+                xhs.explore.time_format = options.time_format()
                 engine_folder = Path(xhs.manager.folder)
 
                 links = await xhs.extract_links(options.links)
@@ -333,6 +374,7 @@ async def fields() -> JSONResponse:
     return JSONResponse(
         {
             "name_fields": list(NAME_FIELDS.keys()),
+            "date_formats": DATE_FORMATS,
             "image_formats": sorted(VALID_IMAGE_FORMATS),
             "video_preferences": sorted(VALID_VIDEO_PREFERENCE),
         }

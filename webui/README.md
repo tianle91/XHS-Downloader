@@ -18,7 +18,12 @@ modified. **All feature code lives inside this `webui/` folder.**
 - **One ZIP download** — every downloaded work is packed into a single ZIP,
   named after your root folder.
 - **File name builder** — click fields (publish time, author, title, likes,
-  tags, …) in the order you want them; the file-name format updates live.
+  tags, …) in the order you want them; an example file name updates live. Click
+  a field again to remove it; clear them all to start a new order from scratch.
+- **Date format** — render the publish/update time fields as
+  `2024-01-31_18:30:45`, `2024-01-31`, `20240131`, `2024.01.31`, `2024-01`,
+  `31-01-2024`, … It applies to file names and `metadata.json`; file mtimes are
+  always the exact publish timestamp.
 - **Folder organisation** — optionally put each work in its own sub-folder
   and/or group works by author.
 - **Format control** — choose image format (JPEG / PNG / WEBP / AUTO / HEIC /
@@ -33,18 +38,21 @@ modified. **All feature code lives inside this `webui/` folder.**
 
 ## Running
 
-From the repository root, after installing the project dependencies
-(`uv sync` or `pip install -r requirements.txt`):
+From the repository root:
 
 ```bash
-python -m webui
+uv run python -m webui
 ```
+
+`uv run` installs/syncs the project dependencies into the virtual environment on
+first use, so no separate install step is needed. If you manage the environment
+yourself (`pip install -r requirements.txt`), plain `python -m webui` works too.
 
 Then open <http://127.0.0.1:5557>.
 
 > **That's the only command you need.** The Web UI runs the `XHS` engine
-> **in-process**, so you do **not** have to start `python main.py api` (the
-> `:5556` REST server) or any other mode first. The `/api/*` routes you see
+> **in-process**, so you do **not** have to start `uv run python main.py api`
+> (the `:5556` REST server) or any other mode first. The `/api/*` routes you see
 > below are this server's own endpoints on `:5557`, not the project's API mode —
 > the two are independent and never talk to each other.
 
@@ -81,13 +89,13 @@ run one after another.
 XHS-Downloader is really **one engine with several front-ends**. The engine is
 `source.application.app.XHS`; `main.py` dispatches to the different front-ends:
 
-| Command                  | Front-end       | Serves                     |
-| ------------------------ | --------------- | -------------------------- |
-| `python main.py`         | TUI (Textual)   | terminal app               |
-| `python main.py api`     | FastAPI REST    | `:5556/xhs/detail`         |
-| `python main.py mcp`     | MCP server      | `:5556/mcp/`               |
-| `python main.py <args>`  | CLI (click)     | terminal                   |
-| **`python -m webui`**    | **Web UI**      | **`:5557` (this folder)**  |
+| Command                         | Front-end       | Serves                     |
+| ------------------------------- | --------------- | -------------------------- |
+| `uv run python main.py`         | TUI (Textual)   | terminal app               |
+| `uv run python main.py api`     | FastAPI REST    | `:5556/xhs/detail`         |
+| `uv run python main.py mcp`     | MCP server      | `:5556/mcp/`               |
+| `uv run python main.py <args>`  | CLI (click)     | terminal                   |
+| **`uv run python -m webui`**    | **Web UI**      | **`:5557` (this folder)**  |
 
 The Web UI is **just another consumer of the same engine** — it imports `XHS`
 and calls the identical pipeline the other modes use:
@@ -124,6 +132,7 @@ This is what keeps the Web UI from interfering with your TUI/CLI usage:
 | Download location      | `Volume/Download`                    | a unique temp dir per job, deleted after zipping          |
 | History DB (skip)      | `Volume/ExploreID.db` (`download_record`) | disabled — every job downloads fresh, skips nothing   |
 | Metadata DB            | `Volume/.../ExploreData.db` (`record_data`) | disabled — optional `metadata.json` in the ZIP instead |
+| Date format            | `Explore.time_format` (`%Y-%m-%d_%H:%M:%S`) | chosen per job, set on the engine instance at run time |
 | Concurrency            | one session per process              | jobs serialised with an `asyncio` lock (engine is a singleton) |
 
 Because it reads none of your persisted config and writes to throwaway temp
@@ -135,7 +144,7 @@ modes.
 
 To keep every feature in a single folder, the Web UI ships as a standalone
 `python -m webui` entry point and does **not** modify `main.py`. If you later
-want a `python main.py web` subcommand, it is a small, self-contained addition
+want a `uv run python main.py web` subcommand, it is a small, self-contained addition
 (the dispatcher in `main.py` already branches on `argv[1]`):
 
 ```python

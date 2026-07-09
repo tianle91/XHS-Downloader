@@ -73,6 +73,7 @@
   }
   .preview { margin-top: 12px; font-size: 13px; color: var(--muted); }
   .preview code { background: var(--panel-2); padding: 3px 8px; border-radius: 6px; color: var(--brand-2); }
+  .preview.warn { color: var(--warn); }
   .toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 10px; }
   .switch { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; padding: 6px 0; }
   .switch input { display: none; }
@@ -141,12 +142,17 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
     </div>
 
     <div class="field" style="margin-bottom:18px;">
-      <label class="block">File name format <small style="color:var(--muted);font-weight:400;">(click to add fields — order matters)</small></label>
+      <label class="block">File name format <small style="color:var(--muted);font-weight:400;">(click to add fields — order matters, click again to remove)</small></label>
       <div class="chips" id="fieldChips"></div>
-      <div class="preview">Example file name: <code id="namePreview">publish_time author title</code></div>
+      <div class="preview" id="namePreviewWrap">Example file name: <code id="namePreview"></code></div>
     </div>
 
     <div class="grid">
+      <div class="field">
+        <label class="block" for="date_format">Date format</label>
+        <select id="date_format"></select>
+        <div class="hint">Used by the publish time &amp; update time fields.</div>
+      </div>
       <div class="field">
         <label class="block" for="image_format">Image format</label>
         <select id="image_format">
@@ -227,10 +233,56 @@ const AVAILABLE_FIELDS = [
   ["author_id","Author ID"],["tags","Tags"],["update_time","Update time"],
   ["likes","Likes"],["collections","Collections"],["comments","Comments"],["shares","Shares"],
 ];
+// Keys must match DATE_FORMATS in app.py; the label is how the sample date
+// 2024-01-31 18:30:45 renders under that pattern.
+const DATE_FORMATS = [
+  ["datetime","2024-01-31_18:30:45"],
+  ["date","2024-01-31"],
+  ["date_compact","20240131"],
+  ["datetime_compact","20240131_183045"],
+  ["date_dotted","2024.01.31"],
+  ["month","2024-01"],
+  ["day_first","31-01-2024"],
+  ["month_first","01-31-2024"],
+];
+// Stand-in values used to render the live file-name example.
+const SAMPLE_VALUES = {
+  author: "Alice", author_id: "5f3ab1c9", title: "Autumn-in-Kyoto",
+  description: "A short caption", id: "65a1b2c3d4", type: "Image",
+  tags: "travel", likes: "1024", collections: "256", comments: "32", shares: "8",
+};
 const DEFAULT_FIELDS = ["publish_time","author","title"];
 let selected = [...DEFAULT_FIELDS];
+let running = false;
 
 const $ = (id) => document.getElementById(id);
+
+// The engine joins name fields with "_" and rewrites ":" to "." in file names.
+function sampleName() {
+  const date = $("date_format").value;
+  const rendered = (DATE_FORMATS.find(([k]) => k === date) || DATE_FORMATS[0])[1];
+  return selected
+    .map((key) => (key === "publish_time" || key === "update_time" ? rendered : SAMPLE_VALUES[key]))
+    .join("_")
+    .replaceAll(":", ".");
+}
+
+function syncStartBtn() {
+  $("startBtn").disabled = running || selected.length === 0;
+}
+
+function updatePreview() {
+  const wrap = $("namePreviewWrap");
+  if (selected.length === 0) {
+    wrap.classList.add("warn");
+    wrap.textContent = "Pick at least one field to build the file name.";
+  } else {
+    wrap.classList.remove("warn");
+    wrap.innerHTML = 'Example file name: <code id="namePreview"></code>';
+    $("namePreview").textContent = sampleName() + ".jpg";
+  }
+  syncStartBtn();
+}
 
 function renderChips() {
   const box = $("fieldChips");
@@ -244,13 +296,25 @@ function renderChips() {
       const at = selected.indexOf(key);
       if (at >= 0) selected.splice(at, 1);
       else selected.push(key);
-      if (selected.length === 0) selected = [...DEFAULT_FIELDS];
       renderChips();
     };
     box.appendChild(chip);
   });
-  $("namePreview").textContent = selected.join(" ") || "publish_time author title";
+  updatePreview();
 }
+
+function renderDateFormats() {
+  const sel = $("date_format");
+  sel.innerHTML = "";
+  DATE_FORMATS.forEach(([key, example]) => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = example;
+    sel.appendChild(opt);
+  });
+  sel.onchange = updatePreview;
+}
+renderDateFormats();
 renderChips();
 
 function collectOptions() {
@@ -258,6 +322,7 @@ function collectOptions() {
     links: $("links").value,
     folder_name: $("folder_name").value || "Download",
     name_fields: selected,
+    date_format: $("date_format").value,
     image_format: $("image_format").value,
     video_preference: $("video_preference").value,
     folder_mode: $("folder_mode").checked,
@@ -285,8 +350,10 @@ function fmtSize(bytes) {
 async function start() {
   const opts = collectOptions();
   if (!opts.links.trim()) { alert("Please paste at least one link."); return; }
+  if (!opts.name_fields.length) { alert("Pick at least one file-name field."); return; }
 
-  $("startBtn").disabled = true;
+  running = true;
+  syncStartBtn();
   $("progressCard").classList.remove("hidden");
   $("downloadBtn").classList.add("hidden");
   $("resultBanner").innerHTML = "";
@@ -301,8 +368,12 @@ async function start() {
       body: JSON.stringify(opts),
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || ("HTTP " + res.status));
+      const { detail } = await res.json().catch(() => ({}));
+      // Validation failures (422) return detail as a list of error objects.
+      throw new Error(
+        Array.isArray(detail) ? detail.map(d => d.msg || String(d)).join("; ")
+                              : (detail || "HTTP " + res.status)
+      );
     }
     const { job_id } = await res.json();
     currentJob = job_id;
@@ -347,13 +418,15 @@ function done(j) {
   btn.classList.remove("hidden");
   btn.textContent = `⬇️ Download ${j.zip_name}`;
   btn.onclick = () => { window.location.href = "/api/jobs/" + currentJob + "/download"; };
-  $("startBtn").disabled = false;
+  running = false;
+  syncStartBtn();
 }
 
 function finish(ok, msg) {
   $("progressTitle").textContent = ok ? "✅ Done" : "⚠️ Stopped";
   if (!ok) $("resultBanner").innerHTML = `<div class="banner err">${escapeHtml(msg || "Something went wrong.")}</div>`;
-  $("startBtn").disabled = false;
+  running = false;
+  syncStartBtn();
 }
 
 function escapeHtml(s) {
