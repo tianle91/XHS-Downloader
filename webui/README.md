@@ -42,6 +42,12 @@ python -m webui
 
 Then open <http://127.0.0.1:5557>.
 
+> **That's the only command you need.** The Web UI runs the `XHS` engine
+> **in-process**, so you do **not** have to start `python main.py api` (the
+> `:5556` REST server) or any other mode first. The `/api/*` routes you see
+> below are this server's own endpoints on `:5557`, not the project's API mode —
+> the two are independent and never talk to each other.
+
 Configuration via environment variables:
 
 | Variable          | Default     | Description        |
