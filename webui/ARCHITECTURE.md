@@ -88,6 +88,16 @@ Browser                         webui/app.py                         source.XHS
   engine instance once the job starts. Only this fixed set is accepted, because
   the rendered value lands in file names. File mtimes are unaffected — the
   engine takes those from the raw `时间戳` value, not the formatted string.
+- **`_zip_name(links)`** — the archive is named `<APP_NAME>_<digest>.zip`, where
+  the digest is a truncated SHA-256 of the submitted links, normalised by
+  splitting on whitespace, de-duplicating and sorting. The same set of links
+  therefore always produces the same file name, and the name cannot contain a
+  path separator regardless of what was pasted. The root folder *inside* the
+  archive is still `folder_name`; the two are independent.
+- **`Job.failed_links`** — links that produced no work, whether `extract()`
+  raised or simply returned nothing. Exposed through `GET /api/jobs/{id}` so the
+  browser can offer to re-submit them as a new job. This is a level above the
+  engine's own `max_retry`, which has already been exhausted by this point.
 - **Settings persistence lives entirely in the browser.** `index.html` writes the
   form to `localStorage` under `xhs-webui-settings-v1` on every change and
   restores it on load; the server is stateless and never sees it. Values are

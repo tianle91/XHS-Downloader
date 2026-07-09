@@ -16,7 +16,13 @@ modified. **All feature code lives inside this `webui/` folder.**
   `explore`, `discovery/item`, `user/profile` and `xhslink.com` short links.
   Invalid text is ignored automatically.
 - **One ZIP download** — every downloaded work is packed into a single ZIP,
-  named after your root folder.
+  named `XHS-Downloader_<digest>.zip`. The digest is derived from the links you
+  submitted, so the same batch always lands under the same file name and two
+  different batches never overwrite each other in your downloads folder.
+- **Partial failures are recoverable** — links that could not be downloaded are
+  listed when the job ends, with a **Retry failed links** button that re-runs
+  only those. The ZIP always contains just the works that succeeded, so you can
+  take what you have and retry the rest separately.
 - **File name builder** — click fields (publish time, author, title, likes,
   tags, …) in the order you want them; an example file name updates live. Click
   a field again to remove it; clear them all to start a new order from scratch.
@@ -78,9 +84,12 @@ Configuration via environment variables:
    working directory**, disables the shared "download history" DB
    (`download_record=False`) so nothing is ever skipped, and downloads every
    link, capturing progress logs.
-3. When finished, the working folder is zipped (engine bookkeeping DBs
-   excluded) and served from `GET /api/jobs/{id}/download`.
-4. The temporary working folder is deleted immediately after zipping; finished
+3. Any link that yields no work is recorded in the job's `failed_links`, which
+   the browser polls and offers to re-submit as a fresh job.
+4. When finished, the working folder is zipped (engine bookkeeping DBs
+   excluded) and served from `GET /api/jobs/{id}/download`. Only what actually
+   downloaded is in there, so a partial batch still produces a usable archive.
+5. The temporary working folder is deleted immediately after zipping; finished
    ZIPs are cleaned up automatically after 1 hour.
 
 Because the engine is a process-wide singleton with shared HTTP clients, jobs
@@ -200,6 +209,13 @@ uv run python -m unittest discover webui/tests
 - A Cookie is not required, but improves reliability and unlocks
   high-resolution video. Without one, some works may return low-resolution
   files or fail with `403`.
+- **Retries happen at two levels.** The engine already retries each HTTP request
+  and each file download internally (`max_retry`, default 5, so up to six
+  attempts) — the Web UI inherits that and does not change it. *Retry failed
+  links* is the outer level: it re-runs whole links that still failed after the
+  engine gave up, which is what you want for an expired `xsec_token` or a `403`
+  you have since fixed by pasting a Cookie. Retrying a genuinely dead link will
+  simply fail again.
 - XHS links carry a dated `xsec_token`; use freshly-copied links for best
   results.
 - For personal, authorised use only. Respect XiaoHongShu's terms and the

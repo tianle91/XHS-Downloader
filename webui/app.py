@@ -23,6 +23,7 @@ import tempfile
 import time
 import zipfile
 from dataclasses import dataclass, field
+from hashlib import sha256
 from json import dump
 from pathlib import Path
 from uuid import uuid4
@@ -39,6 +40,13 @@ from source import XHS
 
 HERE = Path(__file__).resolve().parent
 INDEX_HTML = HERE.joinpath("index.html")
+
+# Downloaded archives are named ``<APP_NAME>_<digest>.zip``, where the digest is
+# derived from the requested links. The same links therefore always produce the
+# same file name, and two different batches never collide in the browser's
+# download folder.
+APP_NAME = "XHS-Downloader"
+ZIP_DIGEST_LENGTH = 10
 
 # Persistent place to keep finished ZIP files until they are downloaded.
 ZIP_DIR = Path(tempfile.gettempdir()).joinpath("xhs_webui_zips")
@@ -110,6 +118,7 @@ class Job:
     failed: int = 0
     current: str = ""
     logs: list[str] = field(default_factory=list)
+    failed_links: list[str] = field(default_factory=list)
     error: str = ""
     zip_path: Path | None = None
     zip_name: str = ""
@@ -127,6 +136,7 @@ class Job:
             "failed": self.failed,
             "current": self.current,
             "logs": self.logs[-200:],
+            "failed_links": self.failed_links,
             "error": self.error,
             "file_count": self.file_count,
             "size_bytes": self.size_bytes,
@@ -279,7 +289,6 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                     try:
                         result = await xhs.extract(link, True, None, True)
                     except Exception as exc:  # noqa: BLE001 - surface to the user
-                        job.failed += 1
                         job.logs.append(f"Error processing {link}: {exc!r}")
                         result = []
                     valid = [item for item in (result or []) if item and item.get("作品ID")]
@@ -287,7 +296,9 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                         job.success += 1
                         collected.extend(valid)
                     else:
+                        # Recorded so the browser can offer to retry just these.
                         job.failed += 1
+                        job.failed_links.append(link)
                     job.done = i + 1
 
                 job.current = ""
@@ -314,7 +325,7 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                 )
                 return
 
-            zip_name = _safe_zip_name(options.folder_name)
+            zip_name = _zip_name(options.links)
             zip_path = ZIP_DIR.joinpath(f"{job.id}.zip")
             count, size = await asyncio.to_thread(_zip_directory, engine_folder, zip_path)
 
@@ -342,10 +353,19 @@ def _write_metadata(folder: Path, data: list[dict]) -> None:
         dump(trimmed, f, ensure_ascii=False, indent=2, default=str)
 
 
-def _safe_zip_name(folder_name: str) -> str:
-    base = "".join(c for c in folder_name.strip() if c.isalnum() or c in "-_ ").strip()
-    base = base.replace(" ", "-") or "XHS-Download"
-    return f"{base}.zip"
+def _links_digest(links: str) -> str:
+    """A short, stable digest of the links in a request.
+
+    Whitespace, ordering and duplicates do not change the result: the same set
+    of links always yields the same digest, because they always yield the same
+    archive.
+    """
+    unique = sorted(set(links.split()))
+    return sha256("\n".join(unique).encode()).hexdigest()[:ZIP_DIGEST_LENGTH]
+
+
+def _zip_name(links: str) -> str:
+    return f"{APP_NAME}_{_links_digest(links)}.zip"
 
 
 def _cleanup_expired() -> None:

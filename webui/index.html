@@ -105,6 +105,15 @@
     font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word;
   }
   .log .line { padding: 1px 0; }
+  .failed { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 13.5px;
+            background: rgba(255,176,32,.10); border: 1px solid var(--warn); }
+  .failed-head { color: var(--warn); margin-bottom: 8px; }
+  .failed-list {
+    max-height: 120px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; color: var(--muted); word-break: break-all; margin-bottom: 10px;
+  }
+  .btn.ghost { background: transparent; border: 1px solid var(--warn); color: var(--warn); padding: 10px 16px; }
+  .btn.ghost:hover { background: rgba(255,176,32,.14); }
   .banner { padding: 12px 14px; border-radius: 10px; font-size: 14px; margin-top: 14px; }
   .banner.err { background: rgba(255,46,81,.12); border: 1px solid var(--brand); color: var(--brand-2); }
   .banner.ok { background: rgba(51,209,122,.12); border: 1px solid var(--ok); color: var(--ok); }
@@ -136,9 +145,11 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
     <div class="section-title">🗂️ File &amp; folder formatting <small>controls how files are named and organised inside the ZIP</small></div>
 
     <div class="field" style="margin-bottom:18px;">
-      <label class="block" for="folder_name">Root folder / ZIP name</label>
+      <label class="block" for="folder_name">Root folder</label>
       <input type="text" id="folder_name" value="Download" />
-      <div class="hint">Top-level folder inside the archive; also used as the download file name.</div>
+      <div class="hint">Top-level folder inside the archive. The ZIP itself is named
+        <code>XHS-Downloader_&lt;hash of your links&gt;.zip</code>, so the same links always
+        produce the same file name.</div>
     </div>
 
     <div class="field" style="margin-bottom:18px;">
@@ -220,6 +231,13 @@ https://www.xiaohongshu.com/discovery/item/xxxx?xsec_token=xxxx"></textarea>
     </div>
     <div class="log" id="log"></div>
     <div id="resultBanner"></div>
+
+    <div class="failed hidden" id="failedBox">
+      <div class="failed-head"><b id="failedCount">0</b> link(s) could not be downloaded:</div>
+      <div class="failed-list" id="failedList"></div>
+      <button class="btn ghost" id="retryBtn">↻ Retry failed links</button>
+    </div>
+
     <button class="btn secondary hidden" id="downloadBtn" style="margin-top:14px;">⬇️ Download ZIP</button>
   </div>
 
@@ -288,6 +306,7 @@ function sampleName() {
 
 function syncStartBtn() {
   $("startBtn").disabled = running || selected.length === 0;
+  $("retryBtn").disabled = running;
 }
 
 function updatePreview() {
@@ -390,6 +409,7 @@ watchSettings();
 
 let pollTimer = null;
 let currentJob = null;
+let retryLinks = [];
 
 function fmtSize(bytes) {
   if (!bytes) return "0 B";
@@ -407,6 +427,7 @@ async function start() {
   syncStartBtn();
   $("progressCard").classList.remove("hidden");
   $("downloadBtn").classList.add("hidden");
+  $("failedBox").classList.add("hidden");
   $("resultBanner").innerHTML = "";
   $("log").innerHTML = "";
   $("barFill").style.width = "0%";
@@ -452,23 +473,41 @@ async function poll(jobId) {
     log.scrollTop = log.scrollHeight;
 
     if (j.status === "done") { clearInterval(pollTimer); done(j); }
-    else if (j.status === "error") { clearInterval(pollTimer); finish(false, j.error); }
+    else if (j.status === "error") { clearInterval(pollTimer); finish(false, j.error); renderFailed(j); }
   } catch (e) {
     clearInterval(pollTimer);
     finish(false, e.message);
   }
 }
 
+// Offer to re-run just the links that did not come through. The engine already
+// retries each request internally (max_retry); this is for links that still
+// failed afterwards -- an expired xsec_token, a 403 needing a Cookie, and so on.
+function renderFailed(j) {
+  const links = j.failed_links || [];
+  const box = $("failedBox");
+  retryLinks = links;
+  if (!links.length) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  $("failedCount").textContent = links.length;
+  $("failedList").innerHTML = links.map(l => `<div>${escapeHtml(l)}</div>`).join("");
+  $("retryBtn").textContent = `↻ Retry ${links.length} failed link${links.length === 1 ? "" : "s"}`;
+}
+
 function done(j) {
   $("barFill").style.width = "100%";
-  $("progressTitle").textContent = "✅ Done";
+  $("progressTitle").textContent = j.failed ? "⚠️ Finished with failures" : "✅ Done";
   $("resultBanner").innerHTML =
     `<div class="banner ok">Packed <b>${j.file_count}</b> file(s) · ${fmtSize(j.size_bytes)} · ` +
     `${j.success} work(s) succeeded${j.failed ? `, ${j.failed} failed` : ""}.</div>`;
   const btn = $("downloadBtn");
   btn.classList.remove("hidden");
-  btn.textContent = `⬇️ Download ${j.zip_name}`;
+  // The ZIP only ever holds what downloaded, so this is the "successful only" path.
+  btn.textContent = j.failed
+    ? `⬇️ Download the ${j.success} successful work(s)`
+    : `⬇️ Download ${j.zip_name}`;
   btn.onclick = () => { window.location.href = "/api/jobs/" + currentJob + "/download"; };
+  renderFailed(j);
   running = false;
   syncStartBtn();
 }
@@ -486,6 +525,12 @@ function escapeHtml(s) {
 
 $("startBtn").onclick = start;
 $("resetBtn").onclick = (e) => { e.preventDefault(); resetSettings(); };
+$("retryBtn").onclick = () => {
+  if (running || !retryLinks.length) return;
+  // Put them in the box so it is clear which links the new job is running.
+  $("links").value = retryLinks.join("\n");
+  start();
+};
 </script>
 </body>
 </html>

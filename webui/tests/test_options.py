@@ -16,7 +16,15 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from webui.app import DATE_FORMATS, DEFAULT_DATE_FORMAT, NAME_FIELDS, BatchOptions
+from webui.app import (
+    APP_NAME,
+    DATE_FORMATS,
+    DEFAULT_DATE_FORMAT,
+    NAME_FIELDS,
+    ZIP_DIGEST_LENGTH,
+    BatchOptions,
+    _zip_name,
+)
 
 
 class NameFieldsTest(unittest.TestCase):
@@ -95,6 +103,41 @@ class EngineKwargsTest(unittest.TestCase):
     def test_blank_proxy_becomes_none(self) -> None:
         kwargs = BatchOptions(links="x", proxy="  ").engine_kwargs(Path("/tmp/work"))
         self.assertIsNone(kwargs["proxy"])
+
+
+class ZipNameTest(unittest.TestCase):
+    ONE = "https://www.xiaohongshu.com/explore/aaa"
+    TWO = "https://xhslink.com/bbb"
+
+    def test_shape_is_app_name_plus_digest(self) -> None:
+        name = _zip_name(self.ONE)
+        self.assertTrue(name.startswith(f"{APP_NAME}_"), name)
+        self.assertTrue(name.endswith(".zip"), name)
+        digest = name[len(APP_NAME) + 1 : -len(".zip")]
+        self.assertEqual(len(digest), ZIP_DIGEST_LENGTH)
+        self.assertTrue(digest.isalnum())
+
+    def test_same_links_give_the_same_name(self) -> None:
+        self.assertEqual(_zip_name(self.ONE), _zip_name(self.ONE))
+
+    def test_different_links_give_different_names(self) -> None:
+        self.assertNotEqual(_zip_name(self.ONE), _zip_name(self.TWO))
+
+    def test_name_ignores_order_whitespace_and_duplicates(self) -> None:
+        # All of these produce the same archive, so they get the same name.
+        canonical = _zip_name(f"{self.ONE} {self.TWO}")
+        for variant in (
+            f"{self.TWO} {self.ONE}",  # reordered
+            f"  {self.ONE}\n\n{self.TWO}  ",  # padded and newline separated
+            f"{self.ONE} {self.TWO} {self.ONE}",  # duplicated
+        ):
+            with self.subTest(variant=variant):
+                self.assertEqual(_zip_name(variant), canonical)
+
+    def test_name_is_a_safe_file_name(self) -> None:
+        name = _zip_name("https://a/b?c=d&e=f  ../../etc/passwd")
+        self.assertNotIn("/", name)
+        self.assertNotIn("..", name)
 
 
 if __name__ == "__main__":
