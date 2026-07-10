@@ -80,3 +80,23 @@ punctuation, and removes duplicates while keeping first-seen order. Without
 > The Recently Deleted folder is matched by name. If your Mac's language isn't
 > English or Chinese, add your locale's folder name to `TRASH_NAMES` near the top
 > of the script so those notes stay excluded.
+
+### Tests
+
+The AppleScript that reads Notes needs a real Mac, but the link-extraction
+pipeline is exposed through an internal `--extract` mode that filters **stdin**
+only (no Notes access), so it runs anywhere:
+
+```bash
+echo 'see http://xhslink.com/o/6RRY1UzhcbG.' | ./apple_notes_xhslinks.sh --extract
+# -> http://xhslink.com/o/6RRY1UzhcbG
+```
+
+[`../tests/test_apple_notes_script.py`](../tests/test_apple_notes_script.py)
+pipes sample note HTML through that mode to pin down the matching behaviour
+(href vs. plain text, trailing punctuation, dedup, ignoring non-xhslink URLs).
+Run it with the rest of the Web UI suite from the repository root:
+
+```bash
+uv run python -m unittest discover webui/tests
+```

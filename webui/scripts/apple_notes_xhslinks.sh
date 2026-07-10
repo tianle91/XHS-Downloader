@@ -33,16 +33,39 @@ usage() {
   sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'
 }
 
+# Core link-extraction pipeline: read text (note HTML) on stdin and print the
+# xhslink.com short links it contains, one per line, deduped in first-seen
+# order. The path stops at whitespace, quotes or angle brackets (note bodies are
+# HTML, so links appear inside href="..." too); any trailing punctuation an
+# editor glued on is stripped. `|| true` keeps a no-match `grep` from tripping
+# `set -o pipefail`. Kept as one function with a single regex so the matching
+# behaviour has one source of truth — exercised without a Mac via `--extract`
+# (see webui/tests/test_apple_notes_script.py).
+extract_links() {
+  grep -Eo 'https?://xhslink\.com/[^"'"'"'<> ]+' \
+    | sed -E 's/[.,;:)]+$//' \
+    | awk '!seen[$0]++' || true
+}
+
 DELETE=0
 ASSUME_YES=0
+EXTRACT=0
 for arg in "$@"; do
   case "$arg" in
-    -d|--delete) DELETE=1 ;;
-    -y|--yes)    ASSUME_YES=1 ;;
-    -h|--help)   usage; exit 0 ;;
+    -d|--delete)  DELETE=1 ;;
+    -y|--yes)     ASSUME_YES=1 ;;
+    --extract)    EXTRACT=1 ;;   # internal: filter stdin only, no Notes access
+    -h|--help)    usage; exit 0 ;;
     *) echo "Unknown option: $arg" >&2; echo >&2; usage >&2; exit 2 ;;
   esac
 done
+
+# --extract runs the pure text pipeline over stdin and stops, so the extraction
+# logic is testable on any platform. It deliberately sits before the macOS check.
+if [[ "$EXTRACT" -eq 1 ]]; then
+  extract_links
+  exit 0
+fi
 
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "Error: this script only runs on macOS (it needs the Notes app)." >&2
@@ -80,15 +103,8 @@ end tell
 APPLESCRIPT
 )"
 
-# Extract xhslink.com short links. The path stops at whitespace, quotes or angle
-# brackets (note bodies are HTML, so links appear inside href="..." too). We then
-# strip any trailing punctuation an editor may have glued on, and dedupe while
-# preserving first-seen order. `|| true` keeps a no-match `grep` from tripping
-# `set -o pipefail` and exiting the script silently.
-links="$(printf '%s\n' "$notes_html" \
-  | grep -Eo 'https?://xhslink\.com/[^"'"'"'<> ]+' \
-  | sed -E 's/[.,;:)]+$//' \
-  | awk '!seen[$0]++' || true)"
+# Extract the xhslink.com short links from the collected note HTML.
+links="$(printf '%s\n' "$notes_html" | extract_links)"
 
 if [[ -n "$links" ]]; then
   printf '%s\n' "$links"
