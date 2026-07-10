@@ -50,12 +50,14 @@ extract_links() {
 DELETE=0
 ASSUME_YES=0
 EXTRACT=0
+LIST_FOLDERS=0
 for arg in "$@"; do
   case "$arg" in
-    -d|--delete)  DELETE=1 ;;
-    -y|--yes)     ASSUME_YES=1 ;;
-    --extract)    EXTRACT=1 ;;   # internal: filter stdin only, no Notes access
-    -h|--help)    usage; exit 0 ;;
+    -d|--delete)   DELETE=1 ;;
+    -y|--yes)      ASSUME_YES=1 ;;
+    --extract)     EXTRACT=1 ;;        # internal: filter stdin only, no Notes access
+    --list-folders) LIST_FOLDERS=1 ;;  # diagnostic: print the account/folder tree
+    -h|--help)     usage; exit 0 ;;
     *) echo "Unknown option: $arg" >&2; echo >&2; usage >&2; exit 2 ;;
   esac
 done
@@ -73,33 +75,99 @@ if [[ "$(uname)" != "Darwin" ]]; then
 fi
 
 # Localised names of the "Recently Deleted" folder we skip. Add your locale's
-# name here if it isn't listed and you see already-trashed notes coming back.
+# name here if it isn't listed and you see already-trashed notes coming back;
+# run `--list-folders` to see the exact folder names on this Mac.
 readonly TRASH_NAMES='{"Recently Deleted", "最近删除", "最近刪除"}'
 
-# Dump the raw body (HTML) of every note across every account/folder, one note
-# per line, skipping the Recently Deleted folder. We loop note-by-note (rather
-# than coercing `body of every note` in one shot) so a single unreadable note —
-# locked, empty, or from an IMAP/Exchange account — is skipped instead of
-# aborting the whole run with an Apple Events error (e.g. -1741). The folder name
-# is read in its own `try`: if that lookup fails we default to "" (treated as
-# not-trash) and still keep the note, rather than dropping it.
+# --list-folders: print the account/folder tree with note counts, marking the
+# folder(s) treated as Recently Deleted. A diagnostic to confirm what is and
+# isn't being scanned.
+if [[ "$LIST_FOLDERS" -eq 1 ]]; then
+  osascript <<APPLESCRIPT
+tell application "Notes"
+    set trashNames to ${TRASH_NAMES}
+    set out to ""
+    repeat with acct in accounts
+        set out to out & "ACCOUNT: " & (name of acct) & linefeed
+        try
+            repeat with f in folders of acct
+                set out to out & my listFolder(f, trashNames, "  ")
+            end repeat
+        end try
+    end repeat
+    return out
+end tell
+
+on listFolder(theFolder, trashNames, indent)
+    set acc to ""
+    tell application "Notes"
+        set fname to "?"
+        try
+            set fname to name of theFolder
+        end try
+        set nc to -1
+        try
+            set nc to count of notes of theFolder
+        end try
+        set mark to ""
+        if fname is in trashNames then set mark to "   <- skipped (Recently Deleted)"
+        set acc to indent & fname & " (" & nc & " notes)" & mark & linefeed
+        try
+            repeat with sub in folders of theFolder
+                set acc to acc & my listFolder(sub, trashNames, indent & "  ")
+            end repeat
+        end try
+    end tell
+    return acc
+end listFolder
+APPLESCRIPT
+  exit 0
+fi
+
+# Dump the raw body (HTML) of every note, one per line. We walk accounts →
+# folders → subfolders and read each note's body inside its own `try`, rather
+# than coercing `body of every note` in one shot: that keeps a single unreadable
+# note (locked, empty, or from an IMAP/Exchange account) from aborting the whole
+# run with an Apple Events error (e.g. -1741). Walking real folders — instead of
+# the app-level `notes`, which also returns trashed notes — is what excludes the
+# Recently Deleted folder: a trashed note lives only there, so skipping that
+# folder by name drops it structurally, with no dependency on a per-note
+# `container` lookup (which can fail).
 notes_html="$(osascript <<APPLESCRIPT
 tell application "Notes"
     set trashNames to ${TRASH_NAMES}
     set out to ""
-    repeat with n in notes
-        set fname to ""
+    repeat with acct in accounts
         try
-            set fname to name of container of n
+            repeat with f in folders of acct
+                set out to out & my dumpFolder(f, trashNames)
+            end repeat
         end try
-        if fname is not in trashNames then
-            try
-                set out to out & (body of n) & linefeed
-            end try
-        end if
     end repeat
     return out
 end tell
+
+on dumpFolder(theFolder, trashNames)
+    set acc to ""
+    tell application "Notes"
+        try
+            if (name of theFolder) is in trashNames then return ""
+        end try
+        try
+            repeat with n in notes of theFolder
+                try
+                    set acc to acc & (body of n) & linefeed
+                end try
+            end repeat
+        end try
+        try
+            repeat with sub in folders of theFolder
+                set acc to acc & my dumpFolder(sub, trashNames)
+            end repeat
+        end try
+    end tell
+    return acc
+end dumpFolder
 APPLESCRIPT
 )"
 
@@ -111,17 +179,16 @@ if [[ -n "$links" ]]; then
 else
   # Nothing matched — help distinguish "no access" from "no links". Diagnostics
   # go to stderr so they never pollute a piped/redirected link list.
-  note_count="$(osascript -e 'tell application "Notes" to return count of notes' 2>/dev/null || echo '?')"
   {
     echo "No http://xhslink.com/... links found."
-    echo "  Notes visible to the script: ${note_count}"
-    if [[ "$note_count" == "0" || "$note_count" == "?" ]]; then
-      echo "  That looks like an access problem. Grant control under"
-      echo "  System Settings ▸ Privacy & Security ▸ Automation (Terminal → Notes),"
-      echo "  make sure the Notes app is open and finished syncing, then re-run."
+    if [[ -z "$notes_html" ]]; then
+      echo "  No note content was read at all — likely an access problem. Grant"
+      echo "  control under System Settings ▸ Privacy & Security ▸ Automation"
+      echo "  (Terminal → Notes), make sure the Notes app is open and finished"
+      echo "  syncing, then re-run. Use --list-folders to see what is visible."
     else
-      echo "  Access is fine, but none of those notes contained an xhslink.com link"
-      echo "  (locked notes and the Recently Deleted folder are skipped)."
+      echo "  Notes were read, but none contained an xhslink.com link (locked"
+      echo "  notes and the Recently Deleted folder are skipped)."
     fi
   } >&2
 fi
@@ -129,28 +196,47 @@ fi
 [[ "$DELETE" -eq 1 ]] || exit 0
 
 # ---- Deletion --------------------------------------------------------------
-# Collect the ids of the notes to trash: those that mention xhslink.com and are
-# not already in Recently Deleted. Referencing notes by id (not list index)
-# keeps deletion stable even as the collection shrinks.
+# Collect the ids of the notes to trash: those that mention xhslink.com, walking
+# real folders so the Recently Deleted folder is excluded (same reasoning as the
+# body dump above). Referencing notes by id (not list index) keeps deletion
+# stable even as the collection shrinks.
 ids_raw="$(osascript <<APPLESCRIPT
 tell application "Notes"
     set trashNames to ${TRASH_NAMES}
     set out to ""
-    repeat with n in notes
-        set fname to ""
+    repeat with acct in accounts
         try
-            set fname to name of container of n
+            repeat with f in folders of acct
+                set out to out & my collectFolder(f, trashNames)
+            end repeat
         end try
-        if fname is not in trashNames then
-            try
-                if (body of n) contains "xhslink.com" then
-                    set out to out & (id of n) & linefeed
-                end if
-            end try
-        end if
     end repeat
     return out
 end tell
+
+on collectFolder(theFolder, trashNames)
+    set acc to ""
+    tell application "Notes"
+        try
+            if (name of theFolder) is in trashNames then return ""
+        end try
+        try
+            repeat with n in notes of theFolder
+                try
+                    if (body of n) contains "xhslink.com" then
+                        set acc to acc & (id of n) & linefeed
+                    end if
+                end try
+            end repeat
+        end try
+        try
+            repeat with sub in folders of theFolder
+                set acc to acc & my collectFolder(sub, trashNames)
+            end repeat
+        end try
+    end tell
+    return acc
+end collectFolder
 APPLESCRIPT
 )"
 
@@ -178,7 +264,12 @@ if [[ "$ASSUME_YES" -ne 1 ]]; then
   esac
 fi
 
-deleted="$(osascript /dev/stdin "${ids[@]}" <<'APPLESCRIPT'
+# Delete by id, passing the ids as arguments. The AppleScript is written to a
+# real temp file rather than piped in: osascript cannot reliably read its script
+# from /dev/stdin (a heredoc), which fails with "I/O error (bummers)".
+delete_script="$(mktemp "${TMPDIR:-/tmp}/xhslink_delete.XXXXXX")"
+trap 'rm -f "$delete_script"' EXIT
+cat >"$delete_script" <<'APPLESCRIPT'
 on run argv
     tell application "Notes"
         set c to 0
@@ -192,6 +283,7 @@ on run argv
     end tell
 end run
 APPLESCRIPT
-)"
+
+deleted="$(osascript "$delete_script" "${ids[@]}")"
 
 echo "Moved ${deleted} note(s) to Recently Deleted (recoverable for ~30 days)." >&2

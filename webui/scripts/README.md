@@ -66,20 +66,46 @@ downloaded, so pasting the whole list repeatedly is safe.
 
 ### How it works
 
-It walks your notes one at a time and reads the HTML body of each, skipping any
-it can't open (a locked note, or one on an IMAP/Exchange account) and any note in
-the **Recently Deleted** folder — so already-trashed notes never resurface. From
-that it extracts anything matching `https?://xhslink.com/…` — whether the link is
-visible text or hidden inside an `href="…"` attribute — trims trailing
-punctuation, and removes duplicates while keeping first-seen order. Without
-`--delete` it never modifies your notes; it only reads them.
+It walks your Notes **account by account and folder by folder** (into subfolders
+too), reading each note's HTML body and skipping any it can't open (a locked
+note, or one on an IMAP/Exchange account). It deliberately does **not** use the
+app-wide note list, because that also returns trashed notes; walking real folders
+and skipping the **Recently Deleted** folder is what keeps already-deleted notes
+from resurfacing. From the bodies it reads, it extracts anything matching
+`https?://xhslink.com/…` — whether the link is visible text or hidden inside an
+`href="…"` attribute — trims trailing punctuation, and removes duplicates while
+keeping first-seen order. Without `--delete` it never modifies your notes; it
+only reads them.
 
 > A locked note stays skipped until you unlock it in the Notes app; run the
 > script again afterwards to pick up any links inside it.
 
-> The Recently Deleted folder is matched by name. If your Mac's language isn't
-> English or Chinese, add your locale's folder name to `TRASH_NAMES` near the top
-> of the script so those notes stay excluded.
+> The Recently Deleted folder is matched **by name**. English and Simplified /
+> Traditional Chinese are built in; if your Mac uses another language and you see
+> trashed notes coming back, run `--list-folders` (below) to find the exact
+> folder name and add it to `TRASH_NAMES` near the top of the script.
+
+### Troubleshooting: what's being scanned
+
+If the output looks wrong — nothing found, or notes you deleted still showing up
+— run:
+
+```bash
+./apple_notes_xhslinks.sh --list-folders
+```
+
+It prints each account and its folder tree with per-folder note counts, and
+marks the folder(s) treated as *Recently Deleted*:
+
+```
+ACCOUNT: iCloud
+  Notes (128 notes)
+  Travel (14 notes)
+  Recently Deleted (37 notes)   <- skipped (Recently Deleted)
+```
+
+If your Recently Deleted folder is **not** marked as skipped, its name isn't in
+`TRASH_NAMES` yet — add it and re-run.
 
 ### Tests
 
