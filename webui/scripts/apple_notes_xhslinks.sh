@@ -55,20 +55,25 @@ readonly TRASH_NAMES='{"Recently Deleted", "最近删除", "最近刪除"}'
 
 # Dump the raw body (HTML) of every note across every account/folder, one note
 # per line, skipping the Recently Deleted folder. We loop note-by-note (rather
-# than coercing `body of every note` in one shot) and wrap each read in `try`,
-# so a single unreadable note — locked, empty, or from an IMAP/Exchange account
-# — is skipped instead of aborting the whole run with an Apple Events error
-# (e.g. -1741).
+# than coercing `body of every note` in one shot) so a single unreadable note —
+# locked, empty, or from an IMAP/Exchange account — is skipped instead of
+# aborting the whole run with an Apple Events error (e.g. -1741). The folder name
+# is read in its own `try`: if that lookup fails we default to "" (treated as
+# not-trash) and still keep the note, rather than dropping it.
 notes_html="$(osascript <<APPLESCRIPT
 tell application "Notes"
     set trashNames to ${TRASH_NAMES}
     set out to ""
     repeat with n in notes
+        set fname to ""
         try
-            if (name of container of n) is not in trashNames then
-                set out to out & (body of n) & linefeed
-            end if
+            set fname to name of container of n
         end try
+        if fname is not in trashNames then
+            try
+                set out to out & (body of n) & linefeed
+            end try
+        end if
     end repeat
     return out
 end tell
@@ -78,11 +83,32 @@ APPLESCRIPT
 # Extract xhslink.com short links. The path stops at whitespace, quotes or angle
 # brackets (note bodies are HTML, so links appear inside href="..." too). We then
 # strip any trailing punctuation an editor may have glued on, and dedupe while
-# preserving first-seen order.
-printf '%s\n' "$notes_html" \
+# preserving first-seen order. `|| true` keeps a no-match `grep` from tripping
+# `set -o pipefail` and exiting the script silently.
+links="$(printf '%s\n' "$notes_html" \
   | grep -Eo 'https?://xhslink\.com/[^"'"'"'<> ]+' \
   | sed -E 's/[.,;:)]+$//' \
-  | awk '!seen[$0]++'
+  | awk '!seen[$0]++' || true)"
+
+if [[ -n "$links" ]]; then
+  printf '%s\n' "$links"
+else
+  # Nothing matched — help distinguish "no access" from "no links". Diagnostics
+  # go to stderr so they never pollute a piped/redirected link list.
+  note_count="$(osascript -e 'tell application "Notes" to return count of notes' 2>/dev/null || echo '?')"
+  {
+    echo "No http://xhslink.com/... links found."
+    echo "  Notes visible to the script: ${note_count}"
+    if [[ "$note_count" == "0" || "$note_count" == "?" ]]; then
+      echo "  That looks like an access problem. Grant control under"
+      echo "  System Settings ▸ Privacy & Security ▸ Automation (Terminal → Notes),"
+      echo "  make sure the Notes app is open and finished syncing, then re-run."
+    else
+      echo "  Access is fine, but none of those notes contained an xhslink.com link"
+      echo "  (locked notes and the Recently Deleted folder are skipped)."
+    fi
+  } >&2
+fi
 
 [[ "$DELETE" -eq 1 ]] || exit 0
 
@@ -95,13 +121,17 @@ tell application "Notes"
     set trashNames to ${TRASH_NAMES}
     set out to ""
     repeat with n in notes
+        set fname to ""
         try
-            if (name of container of n) is not in trashNames then
+            set fname to name of container of n
+        end try
+        if fname is not in trashNames then
+            try
                 if (body of n) contains "xhslink.com" then
                     set out to out & (id of n) & linefeed
                 end if
-            end if
-        end try
+            end try
+        end if
     end repeat
     return out
 end tell
