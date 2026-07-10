@@ -15,8 +15,8 @@ script collects all of those in one go so you can batch-download them.
 ### Requirements
 
 - **macOS** — the script drives the Notes app through AppleScript (`osascript`),
-  which only exists on a Mac. `bash`, `grep`, `sed` and `awk` are all built in;
-  nothing needs installing.
+  which only exists on a Mac. `bash` and `perl` are both preinstalled; nothing
+  needs installing.
 - Your notes must be readable in the **Notes** app on this Mac (any account or
   folder counts).
 
@@ -73,9 +73,22 @@ app-wide note list, because that also returns trashed notes; walking real folder
 and skipping the **Recently Deleted** folder is what keeps already-deleted notes
 from resurfacing. From the bodies it reads, it extracts anything matching
 `https?://xhslink.com/…` — whether the link is visible text or hidden inside an
-`href="…"` attribute — trims trailing punctuation, and removes duplicates while
-keeping first-seen order. Without `--delete` it never modifies your notes; it
-only reads them.
+`href="…"` attribute — trims trailing ASCII punctuation, and removes duplicates
+while keeping first-seen order. Without `--delete` it never modifies your notes;
+it only reads them.
+
+The link body uses the **same terminator set as the engine's `SHORT` pattern**
+(`source/application/app.py`): it stops at whitespace, quotes, angle brackets,
+`` \ ^ ` { | } `` and CJK punctuation `，。；！？、【】《》`. That last part matters
+for XHS shares — a plain-text link glued to Chinese text like
+`…/6RRY1UzhcbG，看笔记` stops at the fullwidth comma instead of swallowing it. The
+extraction uses `perl` with UTF-8 I/O so those multibyte terminators match
+reliably (BSD `grep` bracket expressions are unreliable for multibyte input).
+
+> One deliberate difference from the engine: the scheme is **required** here
+> (`https?://`), whereas the engine also accepts a bare `xhslink.com/…`. Notes
+> always store XHS shares with the scheme, and requiring it avoids matching
+> `xhslink.com` embedded in another host's path (e.g. `foo.com/xhslink.com/…`).
 
 > A locked note stays skipped until you unlock it in the Notes app; run the
 > script again afterwards to pick up any links inside it.

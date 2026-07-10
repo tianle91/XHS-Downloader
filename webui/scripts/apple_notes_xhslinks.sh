@@ -33,18 +33,24 @@ usage() {
   sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'
 }
 
-# Core link-extraction pipeline: read text (note HTML) on stdin and print the
-# xhslink.com short links it contains, one per line, deduped in first-seen
-# order. The path stops at whitespace, quotes or angle brackets (note bodies are
-# HTML, so links appear inside href="..." too); any trailing punctuation an
-# editor glued on is stripped. `|| true` keeps a no-match `grep` from tripping
-# `set -o pipefail`. Kept as one function with a single regex so the matching
-# behaviour has one source of truth — exercised without a Mac via `--extract`
-# (see webui/tests/test_apple_notes_script.py).
+# Core link-extraction: read text (note HTML) on stdin and print the xhslink.com
+# short links it contains, one per line, deduped in first-seen order. The link
+# body uses the same terminator set as the engine's SHORT pattern in
+# source/application/app.py — whitespace, quotes, angle brackets, ``\ ^ ` { | }``
+# and CJK punctuation ``，。；！？、【】《》`` — so a plain-text link glued to
+# Chinese text (e.g. ``.../6RRY1UzhcbG，看笔记``) stops at the fullwidth comma
+# instead of swallowing it. Any trailing ASCII punctuation an editor glued on is
+# then stripped. Uses ``perl`` (preinstalled on macOS) with UTF-8 I/O so the
+# multibyte terminators match reliably, where BSD ``grep`` bracket expressions
+# are unreliable for multibyte characters. Kept as one function so the matching
+# behaviour has a single source of truth — exercised without a Mac via
+# ``--extract`` (see webui/tests/test_apple_notes_script.py).
+#
+# Scheme note: unlike the engine's ``(?:https?://)?`` we require ``https?://``.
+# Notes always store XHS shares with the scheme, and requiring it avoids matching
+# ``xhslink.com`` embedded in another host's path (e.g. ``foo.com/xhslink.com/…``).
 extract_links() {
-  grep -Eo 'https?://xhslink\.com/[^"'"'"'<> ]+' \
-    | sed -E 's/[.,;:)]+$//' \
-    | awk '!seen[$0]++' || true
+  perl -CSD -Mutf8 -ne 'while (m{(https?://xhslink\.com/[^\s"<>\\^`{|}，。；！？、【】《》]+)}g) { my $u = $1; $u =~ s/[.,;:)]+$//; print "$u\n" unless $seen{$u}++; }'
 }
 
 DELETE=0

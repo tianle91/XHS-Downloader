@@ -67,6 +67,18 @@ class ExtractLinksTest(unittest.TestCase):
                     ["http://xhslink.com/o/6RRY1UzhcbG"],
                 )
 
+    def test_cjk_punctuation_terminates_the_link(self) -> None:
+        # A plain-text link glued to Chinese text must stop at the CJK
+        # punctuation, matching the engine's terminator set — not swallow it.
+        self.assertEqual(
+            self.extract("看这个 http://xhslink.com/o/6RRY1UzhcbG，很好看。"),
+            ["http://xhslink.com/o/6RRY1UzhcbG"],
+        )
+        self.assertEqual(
+            self.extract("【http://xhslink.com/o/6RRY1UzhcbG】"),
+            ["http://xhslink.com/o/6RRY1UzhcbG"],
+        )
+
     def test_duplicates_are_removed_keeping_first_seen_order(self) -> None:
         text = (
             'first <a href="http://xhslink.com/o/AAA">a</a> '
