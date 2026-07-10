@@ -46,7 +46,12 @@ downloaded, so pasting the whole list repeatedly is safe.
 
 ### How it works
 
-It asks Notes for the HTML body of every note, then extracts anything matching
-`https?://xhslink.com/…` — whether the link is visible text or hidden inside an
-`href="…"` attribute — trims trailing punctuation, and removes duplicates while
-keeping first-seen order. It never modifies your notes; it only reads them.
+It walks your notes one at a time and reads the HTML body of each, skipping any
+it can't open (a locked note, or one on an IMAP/Exchange account). From that it
+extracts anything matching `https?://xhslink.com/…` — whether the link is visible
+text or hidden inside an `href="…"` attribute — trims trailing punctuation, and
+removes duplicates while keeping first-seen order. It never modifies your notes;
+it only reads them.
+
+> A locked note stays skipped until you unlock it in the Notes app; run the
+> script again afterwards to pick up any links inside it.

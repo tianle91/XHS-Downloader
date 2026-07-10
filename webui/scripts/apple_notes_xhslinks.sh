@@ -24,13 +24,18 @@ if [[ "$(uname)" != "Darwin" ]]; then
 fi
 
 # Dump the raw body (HTML) of every note across every account/folder, one note
-# per line. AppleScript joins the list with a newline so a note's own newlines
-# don't matter — we only care about the URLs inside.
+# per line. We loop note-by-note (rather than coercing `body of every note` in
+# one shot) and wrap each read in `try`, so a single unreadable note — locked,
+# empty, or from an IMAP/Exchange account — is skipped instead of aborting the
+# whole run with an Apple Events error (e.g. -1741).
 notes_html="$(osascript <<'APPLESCRIPT'
 tell application "Notes"
-    set AppleScript's text item delimiters to linefeed
-    set out to (body of every note) as text
-    set AppleScript's text item delimiters to ""
+    set out to ""
+    repeat with n in notes
+        try
+            set out to out & (body of n) & linefeed
+        end try
+    end repeat
     return out
 end tell
 APPLESCRIPT
