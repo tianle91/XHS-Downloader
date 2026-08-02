@@ -50,6 +50,8 @@ from ..module import (
     # sleep_time,
     ScriptServer,
     INFO,
+    USERAGENT,
+    NoteGenerator,
 )
 from ..translation import _, switch_language
 
@@ -107,7 +109,9 @@ class XHS:
     USER_RN = compile(r"(?:https?://)?www\.rednote\.com/user/profile/[a-z0-9]+/\S+")
     SHARE_XHS = compile(r"(?:https?://)?www\.xiaohongshu\.com/discovery/item/\S+")
     SHARE_RN = compile(r"(?:https?://)?www\.rednote\.com/discovery/item/\S+")
-    SHORT = compile(r"(?:https?://)?xhslink\.com/[^\s\"<>\\^`{|}，。；！？、【】《》]+")
+    SHORT = compile(
+        r"(?:https?://)?xhslink\.(?:com|cn)/[^\s\"<>\\^`{|}，。；！？、【】《》]+"
+    )
     ID = compile(r"(?:explore|item)/(\S+)?\?")
     ID_USER = compile(r"user/profile/[a-z0-9]+/(\S+)?\?")
     __INSTANCE = None
@@ -120,13 +124,13 @@ class XHS:
 
     def __init__(
         self,
-        mapping_data: dict = None,
+        mapping_data: dict | None = None,
         work_path="",
         folder_name="Download",
         name_format="发布时间 作者昵称 作品标题",
-        user_agent: str = None,
+        user_agent: str = USERAGENT,
         cookie: str = "",
-        proxy: str | dict = None,
+        proxy: str | dict | None = None,
         timeout=10,
         chunk=1024 * 1024,
         max_retry=5,
@@ -143,6 +147,7 @@ class XHS:
         language="zh_CN",
         # read_cookie: int | str = None,
         script_server: bool = False,
+        note_format: str = "",
         script_host="0.0.0.0",
         script_port=5558,
         **kwargs,
@@ -172,6 +177,7 @@ class XHS:
             author_archive,
             write_mtime,
             script_server,
+            note_format,
             self.CLEANER,
             self.print,
         )
@@ -185,9 +191,10 @@ class XHS:
         self.video = Video()
         self.explore = Explore()
         self.convert = Converter()
-        self.download = Download(self.manager)
+        self.downloader = Download(self.manager)
         self.id_recorder = IDRecorder(self.manager)
         self.data_recorder = DataRecorder(self.manager)
+        self.note_generator = NoteGenerator(self.manager.note_format)
         self.clipboard_cache: str = ""
         self.queue = Queue()
         self.event = Event()
@@ -222,20 +229,22 @@ class XHS:
         index,
         count: SimpleNamespace,
     ):
-        name = self.__naming_rules(container)
+        nickname = (
+            f"{container['作者ID']}_{self.CLEANER.filter_name(container['作者昵称'])}"
+        )
+        filename = self.__naming_rules(container)
+        path = self.downloader.generate_path(nickname, filename)
         if (u := container["下载地址"]) and download:
             if await self.skip_download(i := container["作品ID"]):
                 self.logging(_("作品 {0} 存在下载记录，跳过下载").format(i))
                 count.skip += 1
             else:
-                __, result = await self.download.run(
+                result = await self.downloader.run(
                     u,
                     container["动图地址"],
                     index,
-                    container["作者ID"]
-                    + "_"
-                    + self.CLEANER.filter_name(container["作者昵称"]),
-                    name,
+                    path,
+                    filename,
                     container["作品类型"],
                     container["时间戳"],
                 )
@@ -251,6 +260,7 @@ class XHS:
         elif not u:
             self.logging(_("提取作品文件下载地址失败"), ERROR)
             count.fail += 1
+        await self.note_generator.save_note_info(container, path, filename)
         await self.save_data(container)
 
     @data_cache
@@ -274,7 +284,7 @@ class XHS:
         self,
         url: str,
         download=False,
-        index: list | tuple = None,
+        index: list | tuple | None = None,
         data=True,
     ) -> list[dict]:
         if not (
@@ -476,8 +486,8 @@ class XHS:
         download: bool,
         index: list | tuple | None,
         data: bool,
-        cookie: str = None,
-        proxy: str = None,
+        cookie: str | None = None,
+        proxy: str | None = None,
         count=SimpleNamespace(
             all=0,
             success=0,
