@@ -150,12 +150,3 @@ mark works as "already downloaded" for the TUI/CLI.
   HTTP clients, so concurrent jobs would trample each other; they queue instead.
 - For personal, authorised use only. Respect XiaoHongShu's terms and the
   original creators' rights.
-
-## Issues
-
-Not working
-```
-Ignoring http://xhslink.com/o/4ezpgtD8zgT: not a XiaoHongShu link
-Ignoring http://xhslink.com/o/8ikfWJk6ynR: not a XiaoHongShu link
-Unexpected error: AttributeError("'XHS' object has no attribute 'download'")
-```

@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from json import dump
 from os import getenv
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -63,6 +63,14 @@ FOLDER_NAME_LENGTH = 80
 
 # Written next to the media when the user asks for it; never counted as media.
 METADATA_NAME = "metadata.json"
+
+# Tokens that look like XHS URLs even before the engine resolves them. A short
+# link that fails to redirect still matches this, so the job can count it as a
+# failure (and offer retry) instead of treating it as pasted prose.
+_XHS_URLISH = re.compile(
+    r"(?:xhslink\.(?:com|cn)|(?:www\.)?(?:xiaohongshu|rednote)\.com)",
+    re.IGNORECASE,
+)
 
 # The XHS engine is a singleton and keeps shared HTTP clients / SQLite handles,
 # so only one job may touch it at a time.
@@ -289,6 +297,50 @@ class BatchOptions(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
+def looks_like_xhs_link(token: str) -> bool:
+    """Whether ``token`` is shaped like an XHS URL the engine should understand.
+
+    Used when ``extract_links`` returns nothing: real prose is dropped from the
+    job total, but an ``xhslink.com`` / explore URL that failed to resolve is a
+    failure the user can retry.
+    """
+    return bool(_XHS_URLISH.search(token))
+
+
+def resolve_failure_detail(final_url: str) -> str:
+    """Turn a soft-404 / blocked redirect URL into a short failure reason.
+
+    Short links often land on ``xiaohongshu.com/404?...&error_code=300031&...``
+    rather than a note URL. ``extract_links`` then returns nothing; the webui
+    re-reads the final URL only to surface that code — it does not use it to
+    download.
+    """
+    if not final_url:
+        return "could not resolve XiaoHongShu link"
+
+    query = parse_qs(urlsplit(final_url).query)
+    code = (query.get("error_code") or [None])[0]
+    msg = (query.get("error_msg") or [None])[0]
+
+    # The 404 page sometimes nests another ``?`` inside ``source=…``, which can
+    # leave ``error_code`` outside what a strict parse expects. Fall back to a
+    # scan of the fully-decoded string.
+    if not code:
+        decoded = unquote(final_url)
+        if m := re.search(r"error_code=(\d+)", decoded):
+            code = m.group(1)
+        if not msg and (m := re.search(r"error_msg=([^&]+)", decoded)):
+            msg = m.group(1)
+
+    if msg:
+        msg = unquote(msg)
+    if code and msg:
+        return f"error_code={code} ({msg})"
+    if code:
+        return f"error_code={code}"
+    return "could not resolve XiaoHongShu link"
+
+
 def folder_for_link(link: str) -> str:
     """The folder name a link downloads into.
 
@@ -372,10 +424,27 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
 
                     resolved = await xhs.extract_links(token)
                     if not resolved:
-                        # Not a link. Prose pasted alongside the URLs is normal,
-                        # so drop it from the denominator rather than fail it.
-                        job.total -= 1
-                        job.logs.append(f"Ignoring {token}: not a XiaoHongShu link")
+                        if looks_like_xhs_link(token):
+                            # A real XHS URL that did not resolve to a note —
+                            # soft-404, expired short link, blocked request, etc.
+                            # Count as failed (Retry can re-submit it). Ask the
+                            # engine's HTTP client for the final URL only so we
+                            # can surface error_code; download resolution stays
+                            # with extract_links / extract.
+                            job.failed += 1
+                            job.failed_links.append(token)
+                            final = await xhs.html.request_url(token, False)
+                            job.logs.append(
+                                f"Failed {token}: {resolve_failure_detail(final)}"
+                            )
+                            job.done += 1
+                        else:
+                            # Prose pasted alongside the URLs is normal, so drop
+                            # it from the denominator rather than fail it.
+                            job.total -= 1
+                            job.logs.append(
+                                f"Ignoring {token}: not a XiaoHongShu link"
+                            )
                         continue
 
                     folder.mkdir(parents=True, exist_ok=True)

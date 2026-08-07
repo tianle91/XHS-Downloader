@@ -113,18 +113,21 @@ ever learns *where* they went.
   between what was pasted and what came back. `_run_job` splits the input itself
   and calls `extract_links()` per token, keeping the pasted form for the folder
   name and for `failed_links`, and using the resolved form only for `extract()`.
-  A token that resolves to nothing is prose, not a failure: it is logged and
-  decremented from `job.total`.
+  A token that resolves to nothing is prose only if it does not look like an XHS
+  URL (`looks_like_xhs_link`): real prose is logged and decremented from
+  `job.total`. An `xhslink.com` / explore-shaped token that fails to resolve is
+  counted as `failed` and appended to `failed_links` so Retry can re-submit it.
 - **Skip policy.** A link whose folder already contains a media file is skipped
   *before* it is resolved (`overwrite` forces it), so re-running a batch of short
   links issues no redirect requests. Symmetrically, a link that writes nothing
   has its folder removed — otherwise the next run would see the empty directory
   and skip a link it never fetched.
 - **`Job.failed_links`** — the pasted links that produced no work, whether
-  `extract()` raised or simply returned nothing. Exposed through
-  `GET /api/jobs/{id}` so the browser can offer to re-submit them as a new job.
-  Reported as pasted, so a retry re-submits exactly what the user gave. This is
-  a level above the engine's own `max_retry`, already exhausted by this point.
+  `extract_links()` could not resolve them, `extract()` raised, or `extract()`
+  returned nothing. Exposed through `GET /api/jobs/{id}` so the browser can
+  offer to re-submit them as a new job. Reported as pasted, so a retry
+  re-submits exactly what the user gave. This is a level above the engine's own
+  `max_retry`, already exhausted by this point.
 - **Settings persistence lives entirely in the browser.** `index.html` writes the
   form to `localStorage` under `xhs-webui-settings-v2` on every change and
   restores it on load; the server is stateless and never sees it. Values are
