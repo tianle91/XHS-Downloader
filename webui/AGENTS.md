@@ -4,7 +4,9 @@ Developer notes for `webui/`. For what the thing *does*, read
 [`README.md`](README.md). For the request/data flow in detail, read
 [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## The one rule
+## The two rules
+
+### 1. Stay inside `webui/`
 
 **All feature code lives inside `webui/`.** Nothing under `source/` is modified.
 Where the engine lacks a hook, the Web UI sets the attribute on the live
@@ -22,9 +24,33 @@ If you find yourself wanting to edit `source/`, look for an attribute to set
 instead. The one exception outside this folder is `/Downloads/` in
 `.gitignore` — the default download directory sits at the repo root.
 
-**Do not re-encode engine URL knowledge** in a parallel regex or host substring.
-`extract_links` / `extract` own resolution and download; the Web UI only
-classifies empty results and presents failures.
+### 2. Reuse the engine as much as possible
+
+The Web UI is a **front-end** on `source.application.app.XHS`, not a parallel
+downloader. Prefer calling into the engine over re-implementing what it already
+knows:
+
+| Do in the engine / via its API              | Do in the Web UI                                      |
+| ------------------------------------------- | ----------------------------------------------------- |
+| Link recognition (`SHORT` / `LINK_*` / …)   | Job accounting, folders, Retry UI                     |
+| Short-link redirect + note resolution       | Classify empty `extract_links` results (prose vs fail)|
+| Fetching and writing media (`extract`)      | Present soft-404 `error_code` in logs                 |
+| `name_format` tokens, image/video options   | Map friendly UI ids → those same engine tokens        |
+
+**Smell test:** if you are about to add a regex, HTTP client, HTML parser, or
+download path that the engine already has, stop — call or reference the engine
+instead. A parallel copy will drift the first time `source/` changes.
+
+Concrete don'ts that follow from this:
+
+- **Do not re-encode engine URL knowledge** in a host substring or home-grown
+  regex. Use `XHS.SHORT` / `LINK_*` / `SHARE_*` / `USER_*`.
+- **Do not resolve or download outside `extract_links` / `extract`.** Diagnostic
+  `request_url` is allowed only to read a soft-404 `error_code` after a short
+  link already failed, and only when `SHORT` matches.
+- **Do not fork option semantics.** Browser controls map onto real `XHS(...)`
+  kwargs / live attributes; inventing Web UI–only meanings for the same names
+  will disagree with TUI/CLI.
 
 ## Layout
 
@@ -86,6 +112,10 @@ are serialised with an `asyncio` lock.
   unknown values with a `field_validator`, so `engine_kwargs` only maps names.
   Do not reintroduce a silent fallback: it turns a client's typo into a
   wrong-format download.
+- **Reuse the engine; do not fork its logic.** Before adding URL matching,
+  HTTP, parsing, or download behaviour in `webui/`, check whether `XHS` (or a
+  live attribute on the instance) already does it. Prefer calling that over a
+  parallel copy that will drift.
 - **Reuse engine URL regexes; do not invent a host matcher.** A looser
   `xiaohongshu.com` substring diverges from what `extract_links` accepts
   (explore / discovery/item / user/profile / xhslink only).
@@ -148,7 +178,9 @@ XHS-Downloader is really **one engine with several front-ends**. The engine is
 | **`uv run python -m webui`**    | **Web UI**      | **`:5557` (this folder)**  |
 
 The Web UI is **just another consumer of the same engine** — it imports `XHS`
-and calls the identical pipeline the other modes use:
+and calls the identical pipeline the other modes use. Batching, per-link
+folders, skip-what-exists, and the Retry UI are Web UI concerns; link
+recognition, resolution, and downloading are not.
 
 ```
 webui/app.py
