@@ -241,12 +241,20 @@ class LooksLikeXhsLinkTest(unittest.TestCase):
                 self.assertTrue(looks_like_xhs_link(token))
 
     def test_full_note_urls_count_as_links(self) -> None:
+        # Same shapes extract_links accepts (engine class regexes).
         for token in (
             "https://www.xiaohongshu.com/explore/65a1b2c3",
+            "https://www.xiaohongshu.com/discovery/item/65a1b2c3",
             "https://www.rednote.com/discovery/item/65a1b2c3",
+            "https://www.xiaohongshu.com/user/profile/abc/65a1b2c3?xsec_token=1",
         ):
             with self.subTest(token=token):
                 self.assertTrue(looks_like_xhs_link(token))
+
+    def test_follows_engine_shapes_not_any_host_path(self) -> None:
+        # A domain match alone is not enough — only explore / item / profile.
+        self.assertFalse(looks_like_xhs_link("https://www.xiaohongshu.com/search/foo"))
+        self.assertFalse(looks_like_xhs_link("https://www.xiaohongshu.com/"))
 
     def test_prose_does_not(self) -> None:
         for token in ("hello", "分享", "https://example.com/note"):

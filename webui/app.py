@@ -64,14 +64,6 @@ FOLDER_NAME_LENGTH = 80
 # Written next to the media when the user asks for it; never counted as media.
 METADATA_NAME = "metadata.json"
 
-# Tokens that look like XHS URLs even before the engine resolves them. A short
-# link that fails to redirect still matches this, so the job can count it as a
-# failure (and offer retry) instead of treating it as pasted prose.
-_XHS_URLISH = re.compile(
-    r"(?:xhslink\.(?:com|cn)|(?:www\.)?(?:xiaohongshu|rednote)\.com)",
-    re.IGNORECASE,
-)
-
 # The XHS engine is a singleton and keeps shared HTTP clients / SQLite handles,
 # so only one job may touch it at a time.
 ENGINE_LOCK = asyncio.Lock()
@@ -298,13 +290,22 @@ class BatchOptions(BaseModel):
 
 
 def looks_like_xhs_link(token: str) -> bool:
-    """Whether ``token`` is shaped like an XHS URL the engine should understand.
+    """Whether ``token`` matches a shape ``extract_links`` knows about.
 
-    Used when ``extract_links`` returns nothing: real prose is dropped from the
-    job total, but an ``xhslink.com`` / explore URL that failed to resolve is a
+    Reuses the engine's own URL regexes so recognition stays one source of
+    truth. Used when ``extract_links`` returns nothing: real prose is dropped
+    from the job total; a token the engine would have tried to handle is a
     failure the user can retry.
     """
-    return bool(_XHS_URLISH.search(token))
+    return bool(
+        XHS.SHORT.search(token)
+        or XHS.SHARE_XHS.search(token)
+        or XHS.SHARE_RN.search(token)
+        or XHS.LINK_XHS.search(token)
+        or XHS.LINK_RN.search(token)
+        or XHS.USER_XHS.search(token)
+        or XHS.USER_RN.search(token)
+    )
 
 
 def resolve_failure_detail(final_url: str) -> str:
@@ -312,7 +313,7 @@ def resolve_failure_detail(final_url: str) -> str:
 
     Short links often land on ``xiaohongshu.com/404?...&error_code=300031&...``
     rather than a note URL. ``extract_links`` then returns nothing; the webui
-    re-reads the final URL only to surface that code — it does not use it to
+    may re-read the final URL only to surface that code — it does not use it to
     download.
     """
     if not final_url:
@@ -339,6 +340,20 @@ def resolve_failure_detail(final_url: str) -> str:
     if code:
         return f"error_code={code}"
     return "could not resolve XiaoHongShu link"
+
+
+async def _unresolved_link_detail(xhs: XHS, token: str) -> str:
+    """Best-effort failure reason after ``extract_links`` returned nothing.
+
+    Only short links are re-fetched: ``extract_links`` already followed the
+    redirect and discarded the soft-404 URL, and ``error_code`` lives on that
+    final URL. Non-short shapes get a generic message — a second
+    ``request_url`` (itself ``@retry``'d) would just double the cost.
+    """
+    if not XHS.SHORT.search(token):
+        return "could not resolve XiaoHongShu link"
+    final = await xhs.html.request_url(token, False)
+    return resolve_failure_detail(final)
 
 
 def folder_for_link(link: str) -> str:
@@ -427,15 +442,12 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                         if looks_like_xhs_link(token):
                             # A real XHS URL that did not resolve to a note —
                             # soft-404, expired short link, blocked request, etc.
-                            # Count as failed (Retry can re-submit it). Ask the
-                            # engine's HTTP client for the final URL only so we
-                            # can surface error_code; download resolution stays
-                            # with extract_links / extract.
+                            # Count as failed (Retry can re-submit it).
                             job.failed += 1
                             job.failed_links.append(token)
-                            final = await xhs.html.request_url(token, False)
                             job.logs.append(
-                                f"Failed {token}: {resolve_failure_detail(final)}"
+                                f"Failed {token}: "
+                                f"{await _unresolved_link_detail(xhs, token)}"
                             )
                             job.done += 1
                         else:

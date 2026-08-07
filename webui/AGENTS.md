@@ -42,9 +42,10 @@ instead. The one exception outside this folder is `/Downloads/` in
    resolves `xhslink.com` short links through a redirect, and the folder must be
    named after the link the user *typed*, not the canonical URL it resolves to —
    so the pairing has to be kept. A token that resolves to nothing is prose if
-   it does not look like an XHS URL (dropped from `job.total`); an
-   `xhslink.com` / explore-shaped token that fails to resolve is counted as a
-   failure and added to `failed_links` for retry.
+   it does not match an engine URL regex (dropped from `job.total`); a token
+   `extract_links` would have tried to handle is counted as a failure and added
+   to `failed_links` for retry. Short-link soft-404s may re-fetch once more only
+   to surface `error_code` in the log.
 4. For each link the engine's file destination is retargeted at
    `<download dir>/<folder_for_link(token)>`, and progress logs are captured. A
    link whose folder already holds files is skipped *before* it is resolved, so

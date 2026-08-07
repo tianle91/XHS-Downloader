@@ -113,10 +113,13 @@ ever learns *where* they went.
   between what was pasted and what came back. `_run_job` splits the input itself
   and calls `extract_links()` per token, keeping the pasted form for the folder
   name and for `failed_links`, and using the resolved form only for `extract()`.
-  A token that resolves to nothing is prose only if it does not look like an XHS
-  URL (`looks_like_xhs_link`): real prose is logged and decremented from
-  `job.total`. An `xhslink.com` / explore-shaped token that fails to resolve is
-  counted as `failed` and appended to `failed_links` so Retry can re-submit it.
+  A token that resolves to nothing is prose only if it does not match an engine
+  URL regex (`looks_like_xhs_link` reuses `XHS.SHORT` / `LINK_*` / `SHARE_*` /
+  `USER_*`): real prose is logged and decremented from `job.total`. A token the
+  engine would have tried to handle is counted as `failed` and appended to
+  `failed_links`. For short links only, a diagnostic `request_url` re-reads the
+  soft-404 final URL so the log can show `error_code` — download resolution
+  stays with `extract_links` / `extract`.
 - **Skip policy.** A link whose folder already contains a media file is skipped
   *before* it is resolved (`overwrite` forces it), so re-running a batch of short
   links issues no redirect requests. Symmetrically, a link that writes nothing
