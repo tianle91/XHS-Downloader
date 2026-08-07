@@ -29,6 +29,8 @@ from webui.app import (
     Job,
     _cleanup_expired,
     folder_for_link,
+    looks_like_xhs_link,
+    resolve_failure_detail,
 )
 
 
@@ -161,7 +163,7 @@ class EngineKwargsTest(unittest.TestCase):
 
     def test_engine_folder_is_not_the_download_folder(self) -> None:
         # The engine's folder holds ExploreData.db and lives in a temp dir;
-        # media is redirected per link via xhs.download.folder. See _run_job.
+        # media is redirected per link via xhs.downloader.folder. See _run_job.
         kwargs = BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))
         self.assertEqual(kwargs["folder_name"], "engine")
 
@@ -226,6 +228,65 @@ class FolderForLinkTest(unittest.TestCase):
     def test_never_empty(self) -> None:
         self.assertTrue(folder_for_link("https://"))
         self.assertTrue(folder_for_link("///"))
+
+
+class LooksLikeXhsLinkTest(unittest.TestCase):
+    def test_short_links_count_as_links(self) -> None:
+        for token in (
+            "http://xhslink.com/o/4tdMekPCLb6",
+            "https://xhslink.cn/m/abc",
+            "xhslink.com/o/4tdMekPCLb6",
+        ):
+            with self.subTest(token=token):
+                self.assertTrue(looks_like_xhs_link(token))
+
+    def test_full_note_urls_count_as_links(self) -> None:
+        # Same shapes extract_links accepts (engine class regexes).
+        for token in (
+            "https://www.xiaohongshu.com/explore/65a1b2c3",
+            "https://www.xiaohongshu.com/discovery/item/65a1b2c3",
+            "https://www.rednote.com/discovery/item/65a1b2c3",
+            "https://www.xiaohongshu.com/user/profile/abc/65a1b2c3?xsec_token=1",
+        ):
+            with self.subTest(token=token):
+                self.assertTrue(looks_like_xhs_link(token))
+
+    def test_follows_engine_shapes_not_any_host_path(self) -> None:
+        # A domain match alone is not enough — only explore / item / profile.
+        self.assertFalse(looks_like_xhs_link("https://www.xiaohongshu.com/search/foo"))
+        self.assertFalse(looks_like_xhs_link("https://www.xiaohongshu.com/"))
+
+    def test_prose_does_not(self) -> None:
+        for token in ("hello", "分享", "https://example.com/note"):
+            with self.subTest(token=token):
+                self.assertFalse(looks_like_xhs_link(token))
+
+
+class ResolveFailureDetailTest(unittest.TestCase):
+    def test_reads_error_code_and_message(self) -> None:
+        url = (
+            "https://www.xiaohongshu.com/404?"
+            "source=/404/sec_x?"
+            "redirectPath=https%3A%2F%2Fwww.xiaohongshu.com%2Fdiscovery%2Fitem%2Fabc"
+            "&error_code=300031"
+            "&error_msg=%E5%BD%93%E5%89%8D%E7%AC%94%E8%AE%B0%E6%9A%82%E6%97%B6%E6%97%A0%E6%B3%95%E6%B5%8F%E8%A7%88"
+        )
+        self.assertEqual(
+            resolve_failure_detail(url),
+            "error_code=300031 (当前笔记暂时无法浏览)",
+        )
+
+    def test_code_only(self) -> None:
+        self.assertEqual(
+            resolve_failure_detail("https://www.xiaohongshu.com/404?error_code=300031"),
+            "error_code=300031",
+        )
+
+    def test_empty_falls_back(self) -> None:
+        self.assertEqual(
+            resolve_failure_detail(""),
+            "could not resolve XiaoHongShu link",
+        )
 
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@ Browser                         webui/app.py                         source.XHS
   │                                  │      if folder has media: skip ────┼─ no request
   │                                  │      extract_links(token) ────────►│  regex parse,
   │                                  │      if none: prose, total -= 1    │  resolve short link
-  │                                  │      xhs.download.folder = folder  │
+  │                                  │      xhs.downloader.folder = folder│
   │                                  │      extract(resolved, dl=True) ──►│  fetch → Download files
   │                                  │      job.done += 1                 │      into folder
   │                                  │      (optional) metadata.json      │
@@ -102,7 +102,7 @@ ever learns *where* they went.
 - **`folder_for_link(token)`** — each link downloads into
   `DOWNLOAD_DIR/<folder_for_link(token)>`, where `token` is the link **as
   pasted**. `Download` captures `manager.folder` at construction, so
-  `xhs.download.folder` is reassigned before each link; the engine itself is
+  `xhs.downloader.folder` is reassigned before each link; the engine itself is
   untouched. The name drops the scheme, `www.` and the query string — the
   `xsec_token` is dated, so keeping it would give the same work a new folder
   every day and defeat the skip check — then reduces what is left to one safe
@@ -113,18 +113,24 @@ ever learns *where* they went.
   between what was pasted and what came back. `_run_job` splits the input itself
   and calls `extract_links()` per token, keeping the pasted form for the folder
   name and for `failed_links`, and using the resolved form only for `extract()`.
-  A token that resolves to nothing is prose, not a failure: it is logged and
-  decremented from `job.total`.
+  A token that resolves to nothing is prose only if it does not match an engine
+  URL regex (`looks_like_xhs_link` reuses `XHS.SHORT` / `LINK_*` / `SHARE_*` /
+  `USER_*`): real prose is logged and decremented from `job.total`. A token the
+  engine would have tried to handle is counted as `failed` and appended to
+  `failed_links`. For short links only, a diagnostic `request_url` re-reads the
+  soft-404 final URL so the log can show `error_code` — download resolution
+  stays with `extract_links` / `extract`.
 - **Skip policy.** A link whose folder already contains a media file is skipped
   *before* it is resolved (`overwrite` forces it), so re-running a batch of short
   links issues no redirect requests. Symmetrically, a link that writes nothing
   has its folder removed — otherwise the next run would see the empty directory
   and skip a link it never fetched.
 - **`Job.failed_links`** — the pasted links that produced no work, whether
-  `extract()` raised or simply returned nothing. Exposed through
-  `GET /api/jobs/{id}` so the browser can offer to re-submit them as a new job.
-  Reported as pasted, so a retry re-submits exactly what the user gave. This is
-  a level above the engine's own `max_retry`, already exhausted by this point.
+  `extract_links()` could not resolve them, `extract()` raised, or `extract()`
+  returned nothing. Exposed through `GET /api/jobs/{id}` so the browser can
+  offer to re-submit them as a new job. Reported as pasted, so a retry
+  re-submits exactly what the user gave. This is a level above the engine's own
+  `max_retry`, already exhausted by this point.
 - **Settings persistence lives entirely in the browser.** `index.html` writes the
   form to `localStorage` under `xhs-webui-settings-v2` on every change and
   restores it on load; the server is stateless and never sees it. Values are

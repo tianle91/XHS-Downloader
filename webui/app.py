@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from json import dump
 from os import getenv
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -256,7 +256,7 @@ class BatchOptions(BaseModel):
         # Every field below is already validated, so this only maps names.
         return {
             # The engine's own folder is a throwaway: it is where ExploreData.db
-            # lands. Media never goes here -- ``Download.folder`` is retargeted
+            # lands. Media never goes here -- ``downloader.folder`` is retargeted
             # at each link's folder before it runs. See _run_job.
             "work_path": str(work_path),
             "folder_name": "engine",
@@ -287,6 +287,73 @@ class BatchOptions(BaseModel):
 # --------------------------------------------------------------------------- #
 # Core job runner
 # --------------------------------------------------------------------------- #
+
+
+def looks_like_xhs_link(token: str) -> bool:
+    """Whether ``token`` matches a shape ``extract_links`` knows about.
+
+    Reuses the engine's own URL regexes so recognition stays one source of
+    truth. Used when ``extract_links`` returns nothing: real prose is dropped
+    from the job total; a token the engine would have tried to handle is a
+    failure the user can retry.
+    """
+    return bool(
+        XHS.SHORT.search(token)
+        or XHS.SHARE_XHS.search(token)
+        or XHS.SHARE_RN.search(token)
+        or XHS.LINK_XHS.search(token)
+        or XHS.LINK_RN.search(token)
+        or XHS.USER_XHS.search(token)
+        or XHS.USER_RN.search(token)
+    )
+
+
+def resolve_failure_detail(final_url: str) -> str:
+    """Turn a soft-404 / blocked redirect URL into a short failure reason.
+
+    Short links often land on ``xiaohongshu.com/404?...&error_code=300031&...``
+    rather than a note URL. ``extract_links`` then returns nothing; the webui
+    may re-read the final URL only to surface that code — it does not use it to
+    download.
+    """
+    if not final_url:
+        return "could not resolve XiaoHongShu link"
+
+    query = parse_qs(urlsplit(final_url).query)
+    code = (query.get("error_code") or [None])[0]
+    msg = (query.get("error_msg") or [None])[0]
+
+    # The 404 page sometimes nests another ``?`` inside ``source=…``, which can
+    # leave ``error_code`` outside what a strict parse expects. Fall back to a
+    # scan of the fully-decoded string.
+    if not code:
+        decoded = unquote(final_url)
+        if m := re.search(r"error_code=(\d+)", decoded):
+            code = m.group(1)
+        if not msg and (m := re.search(r"error_msg=([^&]+)", decoded)):
+            msg = m.group(1)
+
+    if msg:
+        msg = unquote(msg)
+    if code and msg:
+        return f"error_code={code} ({msg})"
+    if code:
+        return f"error_code={code}"
+    return "could not resolve XiaoHongShu link"
+
+
+async def _unresolved_link_detail(xhs: XHS, token: str) -> str:
+    """Best-effort failure reason after ``extract_links`` returned nothing.
+
+    Only short links are re-fetched: ``extract_links`` already followed the
+    redirect and discarded the soft-404 URL, and ``error_code`` lives on that
+    final URL. Non-short shapes get a generic message — a second
+    ``request_url`` (itself ``@retry``'d) would just double the cost.
+    """
+    if not XHS.SHORT.search(token):
+        return "could not resolve XiaoHongShu link"
+    final = await xhs.html.request_url(token, False)
+    return resolve_failure_detail(final)
 
 
 def folder_for_link(link: str) -> str:
@@ -347,7 +414,7 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                 xhs.print.func = _LogCapture(job)
                 # Neither of these is an XHS(...) parameter, so both are applied
                 # to the live instance. ``time_format`` drives the date fields;
-                # ``download.folder`` is the directory files land in, and is
+                # ``downloader.folder`` is the directory files land in, and is
                 # retargeted per link below.
                 xhs.explore.time_format = options.time_format()
 
@@ -372,14 +439,28 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
 
                     resolved = await xhs.extract_links(token)
                     if not resolved:
-                        # Not a link. Prose pasted alongside the URLs is normal,
-                        # so drop it from the denominator rather than fail it.
-                        job.total -= 1
-                        job.logs.append(f"Ignoring {token}: not a XiaoHongShu link")
+                        if looks_like_xhs_link(token):
+                            # A real XHS URL that did not resolve to a note —
+                            # soft-404, expired short link, blocked request, etc.
+                            # Count as failed (Retry can re-submit it).
+                            job.failed += 1
+                            job.failed_links.append(token)
+                            job.logs.append(
+                                f"Failed {token}: "
+                                f"{await _unresolved_link_detail(xhs, token)}"
+                            )
+                            job.done += 1
+                        else:
+                            # Prose pasted alongside the URLs is normal, so drop
+                            # it from the denominator rather than fail it.
+                            job.total -= 1
+                            job.logs.append(
+                                f"Ignoring {token}: not a XiaoHongShu link"
+                            )
                         continue
 
                     folder.mkdir(parents=True, exist_ok=True)
-                    xhs.download.folder = folder
+                    xhs.downloader.folder = folder
                     try:
                         result = await xhs.extract(resolved[0], True, None, True)
                     except Exception as exc:  # noqa: BLE001 - surface to the user
