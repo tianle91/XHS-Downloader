@@ -10,15 +10,21 @@ Developer notes for `webui/`. For what the thing *does*, read
 Where the engine lacks a hook, the Web UI sets the attribute on the live
 instance at run time rather than patching the engine:
 
-| Need                        | How it is done                                    |
-| --------------------------- | ------------------------------------------------- |
-| Capture progress logs       | `xhs.print.func = _LogCapture(job)`                |
-| Choose the date format      | `xhs.explore.time_format = …` (not an `XHS(...)` param) |
-| Send files to a link's folder | `xhs.downloader.folder = …`, retargeted per link   |
+| Need                          | How it is done                                                          |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| Capture progress logs         | `xhs.print.func = _LogCapture(job)`                                     |
+| Choose the date format        | `xhs.explore.time_format = …` (not an `XHS(...)` param)                 |
+| Send files to a link's folder | `xhs.downloader.folder = …`, retargeted per link                        |
+| Decide if a token is a link   | `looks_like_xhs_link` → `XHS.SHORT` / `LINK_*` / `SHARE_*` / `USER_*`  |
+| Soft-404 `error_code` in logs | `_unresolved_link_detail` → `request_url` **only** when `SHORT` matches |
 
 If you find yourself wanting to edit `source/`, look for an attribute to set
 instead. The one exception outside this folder is `/Downloads/` in
 `.gitignore` — the default download directory sits at the repo root.
+
+**Do not re-encode engine URL knowledge** in a parallel regex or host substring.
+`extract_links` / `extract` own resolution and download; the Web UI only
+classifies empty results and presents failures.
 
 ## Layout
 
@@ -41,17 +47,23 @@ instead. The one exception outside this folder is `/Downloads/` in
    rather than passing the whole blob to `extract_links()` once. That call
    resolves `xhslink.com` short links through a redirect, and the folder must be
    named after the link the user *typed*, not the canonical URL it resolves to —
-   so the pairing has to be kept. A token that resolves to nothing is prose if
-   it does not match an engine URL regex (dropped from `job.total`); a token
-   `extract_links` would have tried to handle is counted as a failure and added
-   to `failed_links` for retry. Short-link soft-404s may re-fetch once more only
-   to surface `error_code` in the log.
+   so the pairing has to be kept. When `extract_links` returns nothing:
+   - **Prose** (does not match any engine URL regex) is logged and dropped from
+     `job.total`.
+   - **A token the engine would have tried** (`looks_like_xhs_link`, which
+     reuses `XHS.SHORT` / `LINK_*` / `SHARE_*` / `USER_*`) is counted as
+     **failed** and appended to `failed_links` for Retry.
+   - **Short-link soft-404s** may call `request_url` once more *only* when
+     `XHS.SHORT` matches, so the log can show `error_code` /
+     `error_msg`. Non-short unresolved shapes get a generic Failed reason —
+     do not re-fetch them (that would double an `@retry`'d request). Download
+     resolution stays with `extract_links` / `extract`.
 4. For each link the engine's file destination is retargeted at
    `<download dir>/<folder_for_link(token)>`, and progress logs are captured. A
    link whose folder already holds files is skipped *before* it is resolved, so
    re-running a batch of short links issues no redirect requests at all.
-5. A link that yields no work — or that looked like a link but could not be
-   resolved — is recorded in the job's `failed_links` as pasted, so retry
+5. A link that yields no work — or that matched an engine URL shape but could
+   not be resolved — is recorded in the job's `failed_links` as pasted, so retry
    re-submits what the user gave us. The browser polls this and offers to
    re-submit them as a fresh job. Its folder is removed if nothing was written,
    so the next run does not mistake it for finished.
@@ -74,6 +86,13 @@ are serialised with an `asyncio` lock.
   unknown values with a `field_validator`, so `engine_kwargs` only maps names.
   Do not reintroduce a silent fallback: it turns a client's typo into a
   wrong-format download.
+- **Reuse engine URL regexes; do not invent a host matcher.** A looser
+  `xiaohongshu.com` substring diverges from what `extract_links` accepts
+  (explore / discovery/item / user/profile / xhslink only).
+- **Gate any diagnostic `request_url` on `XHS.SHORT`.** `extract_links` already
+  followed the short-link redirect and discarded the soft-404 URL;
+  re-fetching is solely to read `error_code` for the log. Ungated re-fetches
+  double an `@retry`'d HTTP loop on every failed link.
 - **Some filesystem work is still synchronous** inside `_run_job` —
   `mkdtemp`, `rmtree`, `_write_metadata`, and the `_has_media` short-circuit.
   They are small. The one walk that is not, `_folder_stats` (`rglob` + `stat`
@@ -158,7 +177,11 @@ webui/app.py
   set in `settings.json`.
 - **Link parsing and download logic.** No copies or re-implementations — the UI
   reuses `extract_links()` and `extract()` verbatim, so any engine fix or new
-  supported link type is picked up automatically.
+  supported link type is picked up automatically. URL-*shape* checks for empty
+  `extract_links` results also go through the engine's class regexes
+  (`looks_like_xhs_link`), not a Web UI–owned host matcher.
+  `resolve_failure_detail` is presentation-only (parse `error_code` /
+  `error_msg` from a soft-404 URL for the job log); it does not drive downloads.
 
 ### What it deliberately does *not* share (isolation)
 
