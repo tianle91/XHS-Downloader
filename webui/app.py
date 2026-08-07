@@ -256,7 +256,7 @@ class BatchOptions(BaseModel):
         # Every field below is already validated, so this only maps names.
         return {
             # The engine's own folder is a throwaway: it is where ExploreData.db
-            # lands. Media never goes here -- ``Download.folder`` is retargeted
+            # lands. Media never goes here -- ``downloader.folder`` is retargeted
             # at each link's folder before it runs. See _run_job.
             "work_path": str(work_path),
             "folder_name": "engine",
@@ -347,7 +347,7 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                 xhs.print.func = _LogCapture(job)
                 # Neither of these is an XHS(...) parameter, so both are applied
                 # to the live instance. ``time_format`` drives the date fields;
-                # ``download.folder`` is the directory files land in, and is
+                # ``downloader.folder`` is the directory files land in, and is
                 # retargeted per link below.
                 xhs.explore.time_format = options.time_format()
 
@@ -379,7 +379,7 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                         continue
 
                     folder.mkdir(parents=True, exist_ok=True)
-                    xhs.download.folder = folder
+                    xhs.downloader.folder = folder
                     try:
                         result = await xhs.extract(resolved[0], True, None, True)
                     except Exception as exc:  # noqa: BLE001 - surface to the user

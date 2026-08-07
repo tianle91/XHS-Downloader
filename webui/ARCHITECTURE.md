@@ -65,7 +65,7 @@ Browser                         webui/app.py                         source.XHS
   │                                  │      if folder has media: skip ────┼─ no request
   │                                  │      extract_links(token) ────────►│  regex parse,
   │                                  │      if none: prose, total -= 1    │  resolve short link
-  │                                  │      xhs.download.folder = folder  │
+  │                                  │      xhs.downloader.folder = folder│
   │                                  │      extract(resolved, dl=True) ──►│  fetch → Download files
   │                                  │      job.done += 1                 │      into folder
   │                                  │      (optional) metadata.json      │
@@ -102,7 +102,7 @@ ever learns *where* they went.
 - **`folder_for_link(token)`** — each link downloads into
   `DOWNLOAD_DIR/<folder_for_link(token)>`, where `token` is the link **as
   pasted**. `Download` captures `manager.folder` at construction, so
-  `xhs.download.folder` is reassigned before each link; the engine itself is
+  `xhs.downloader.folder` is reassigned before each link; the engine itself is
   untouched. The name drops the scheme, `www.` and the query string — the
   `xsec_token` is dated, so keeping it would give the same work a new folder
   every day and defeat the skip check — then reduces what is left to one safe

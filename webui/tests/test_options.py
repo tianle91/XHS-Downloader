@@ -161,7 +161,7 @@ class EngineKwargsTest(unittest.TestCase):
 
     def test_engine_folder_is_not_the_download_folder(self) -> None:
         # The engine's folder holds ExploreData.db and lives in a temp dir;
-        # media is redirected per link via xhs.download.folder. See _run_job.
+        # media is redirected per link via xhs.downloader.folder. See _run_job.
         kwargs = BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))
         self.assertEqual(kwargs["folder_name"], "engine")
 

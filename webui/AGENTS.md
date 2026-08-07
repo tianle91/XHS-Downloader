@@ -14,7 +14,7 @@ instance at run time rather than patching the engine:
 | --------------------------- | ------------------------------------------------- |
 | Capture progress logs       | `xhs.print.func = _LogCapture(job)`                |
 | Choose the date format      | `xhs.explore.time_format = …` (not an `XHS(...)` param) |
-| Send files to a link's folder | `xhs.download.folder = …`, retargeted per link   |
+| Send files to a link's folder | `xhs.downloader.folder = …`, retargeted per link   |
 
 If you find yourself wanting to edit `source/`, look for an attribute to set
 instead. The one exception outside this folder is `/Downloads/` in
