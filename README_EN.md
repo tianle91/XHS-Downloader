@@ -2,7 +2,9 @@
 <img src="static/XHS-Downloader.png" alt="XHS-Downloader" height="256" width="256"><br>
 <h1>XHS-Downloader</h1>
 <p><a href="README.md">简体中文</a> | English</p>
-<a href="https://trendshift.io/repositories/5435" target="_blank"><img src="https://trendshift.io/api/badge/repositories/5435" alt="JoeanAmier%2FXHS-Downloader | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://www.star-history.com/joeanamier/xhs-downloader">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=JoeanAmier/XHS-Downloader&type=rank&theme=dark" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=JoeanAmier/XHS-Downloader&type=rank" /><img alt="Star History Rank" src="https://api.star-history.com/badge?repo=JoeanAmier/XHS-Downloader&type=rank" /></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=JoeanAmier/XHS-Downloader&type=trending&theme=dark" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=JoeanAmier/XHS-Downloader&type=trending" /><img alt="GitHub Trending Repository of the Day" src="https://api.star-history.com/badge?repo=JoeanAmier/XHS-Downloader&type=trending" /></picture>
+ </a>
 <br>
 <img alt="GitHub" src="https://img.shields.io/github/license/JoeanAmier/XHS-Downloader?style=flat-square">
 <img alt="GitHub forks" src="https://img.shields.io/github/forks/JoeanAmier/XHS-Downloader?style=flat-square&color=55efc4">
@@ -10,23 +12,23 @@
 <img alt="GitHub code size in bytes" src="https://img.shields.io/github/languages/code-size/JoeanAmier/XHS-Downloader?style=flat-square&color=a29bfe">
 <img alt="GitHub release (with filter)" src="https://img.shields.io/github/v/release/JoeanAmier/XHS-Downloader?style=flat-square&color=48dbfb">
 <br>
-<img alt="Static Badge" src="https://img.shields.io/badge/Python-3.12-b8e994?style=flat-square&logo=python&labelColor=3dc1d3">
+<img alt="Static Badge" src="https://img.shields.io/badge/Python-≥3.12-b8e994?style=flat-square&logo=python&labelColor=3dc1d3">
 <img alt="Static Badge" src="https://img.shields.io/badge/UserScript-ffec3d?style=flat-square&logo=tampermonkey&logoColor=%2300485B">
 <img src="https://img.shields.io/badge/Sourcery-enabled-884898?style=flat-square&color=1890ff" alt="">
-<img alt="Static Badge" src="https://img.shields.io/badge/Docker-badc58?style=flat-square&logo=docker">
+<img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/joeanamier/xhs-downloader?style=flat-square&color=badc58">
 <img alt="GitHub all releases" src="https://img.shields.io/github/downloads/JoeanAmier/XHS-Downloader/total?style=flat-square&color=ffdd59">
-</div>
 <br>
-<p>🔥 <b>RedNote Link Extraction/Content Collection Tool</b>：Extract account-published, favorites, and liked notes links; extract search result notes links and user links; collect RedNote notes information; extract RedNote notes download addresses; download RedNote notes files!</p>
-<p>🔥 "RedNote", "XiaoHongShu" and "小红书" have the same meaning, and this project is collectively referred to as "RedNote".</p>
-<p>⭐ Due to the author's limited energy, I was unable to update the English document in a timely manner, and the content may have become outdated, partial translation is machine translation, the translation result may be incorrect, Suggest referring to Chinese documentation. If you want to contribute to translation, we warmly welcome you.</p>
+<p>🔥 <b>XiaoHongShu (RedNote) link extraction / content collection tool!</b></p>
+</div>
+<hr>
 <h1>📑 Project Features</h1>
 <details>
-<summary>Program Features and User Script Features (Click to Expand)</summary>
+<summary>Program Features and User Script Features, quickly understand project capabilities (Click to Expand)</summary>
 <ul><b>Program Features</b>
 <li>✅ Collect RedNote notes information</li>
 <li>✅ Extract RedNote notes download addresses</li>
 <li>✅ Download RedNote notes files</li>
+<li>✅ Download cover files of video notes</li>
 <li>✅ Download RedNote livePhoto files</li>
 <li>✅ Automatically skip already downloaded notes files</li>
 <li>✅ notes file integrity handling mechanism</li>
@@ -57,12 +59,12 @@
 </ul>
 </details>
 <h1>📸 Program Screenshots</h1>
-<p><a href="https://www.bilibili.com/video/BV1Fcb3zWEjt/">Watch Demo on Bilibili</a>；<a href="https://youtu.be/VIjDytHaopg">Watch Demo on YouTube</a></p>
+<p><a href="https://www.bilibili.com/video/BV1Rv8z62Ebx/">Watch Demo on Bilibili</a>；<a href="https://youtu.be/1WBKuLlOeNw">Watch Demo on YouTube</a></p>
+<p><b>GUI Interface Screenshot</b></p>
 <img src="static/screenshot/程序运行截图EN1.png" alt="">
 <hr>
+<p><b>TUI Interface Screenshot</b> (mode command: <code>python .\main.py TUI</code>)</p>
 <img src="static/screenshot/程序运行截图EN2.png" alt="">
-<hr>
-<img src="static/screenshot/程序运行截图EN3.png" alt="">
 <h1>🔗 Supported Links</h1>
 <ul>
 <li><code>https://www.xiaohongshu.com/explore/NoteID?xsec_token=XXX</code></li>
@@ -72,8 +74,6 @@
 <br/>
 <p><b>Supports entering multiple notes links at once, separated by spaces; the program will automatically extract valid links without additional processing!</b></p>
 </ul>
-<h1>🪟 About the Terminal</h1>
-<p>⭐ It is recommended to use the <a href="https://learn.microsoft.com/en-us/windows/terminal/install">Windows Terminal</a> (default terminal for Windows 11) to run the program for the best display effect!</p>
 <h1>🥣 Usage</h1>
 <p>If you only need to download notes files, it is recommended to choose <b>Program Run</b>; if you have other needs, it is recommended to choose <b>Source Code Run</b>!</p>
 <p>⚠️ Cookies are optional. If issues occur, please try configuring or updating them and retry!</p>
@@ -83,9 +83,9 @@
 <p>⭐ This project includes GitHub Actions for automatic building executable files. Users can use GitHub Actions to build the latest source code into executable files at any time!</p>
 <p>⭐ For the automatic building executable files tutorial, please refer to the <code>Build of Executable File Guide</code> section of this document. If you need a more detailed step-by-step tutorial with illustrations, please <a href="https://mp.weixin.qq.com/s/TorfoZKkf4-x8IBNLImNuw">check out this article</a>!</p>
 <p><strong>Note: Due to the macOS platform's executable file <code>main</code> not being code-signed, it will be restricted by system security measures on first run. Please execute the command <code>xattr -cr project_folder_path</code> in the terminal to remove the security flag, after which it can run normally.</strong></p>
-<p>If you use the program in this way, the default download path for files is: <code>.\_internal\Volume\Download</code>; the configuration file path is: <code>.\_internal\Volume\settings.json</code></p>
+<p>If you use the program in this way, the default download path for files is: <code>.\Volume\Download</code>; the configuration file path is: <code>.\Volume\settings.json</code></p>
 <h3>Update Methods</h3>
-<p><strong>Method 1:</strong> Download and extract the files, then copy the old version of the <code>_internal\Volume</code> folder into the new version's <code>_internal</code> folder.</p>
+<p><strong>Method 1:</strong> Download and extract the files, then copy the old version's <code>Volume</code> folder into the new version's program root directory.</p>
 <p><strong>Method 2:</strong> Download and extract the files (do not run the program), then copy all files and directly overwrite the old version.</p>
 <h2>⌨️ Run from Source Code</h2>
 <ol>
@@ -126,7 +126,9 @@
 </ol>
 <p>When running the project via Docker, the <b>command line call mode</b> is not supported. The <b>clipboard reading</b> and <b>clipboard monitoring</b> functions are unavailable, but pasting content notes fine. Please provide feedback if other features are not functioning properly!</p>
 <h1>🛠 Command Line Mode</h1>
-<p>The project supports command line mode. If you want to download specific images from a text and image notes, you can use this mode to set the image sequence number you want to download!</p>
+<details>
+<summary>Command Line Mode description, suitable for users who prefer terminal operations or need scripted calls (click to expand)</summary>
+<p>The project supports command line mode, allowing you to download note files directly via command line parameters, and you can also set the image sequence number to download!</p>
 <p><strong>Note:</strong> When the <code>--index</code> parameter is not set, multiple notes links can be passed in. All links must be enclosed in quotation marks and separated by spaces. When the <code>--index</code> parameter is set, multiple notes links are not supported. Even if multiple links are passed in, the program will only process the first link!</p>
 <p>The <code>bool</code> type parameters support setting with <code>true</code>, <code>false</code>, <code>1</code>, <code>0</code>, <code>yes</code>, <code>no</code>, <code>on</code> or <code>off</code> (case insensitive).</p>
 <h2>Read Browser Cookies</h2>
@@ -138,9 +140,12 @@
 <img src="static/screenshot/命令行模式截图EN1.png" alt="">
 <hr>
 <img src="static/screenshot/命令行模式截图EN2.png" alt="">
+</details>
 <h1>🖥 Server Mode</h1>
 <p>Server modes include API mode and MCP mode!</p>
 <h2>API Mode</h2>
+<details>
+<summary>API Mode description, suitable for developers who need to call the API to retrieve note data or download files (click to expand)</summary>
 <p><b>Start:</b> Run the command: <code>python .\main.py api</code></p>
 <p><b>Stop:</b> Press <code>Ctrl</code> + <code>C</code> to stop the server</p>
 <p>Open <code>http://127.0.0.1:5556/docs</code> or <code>http://127.0.0.1:5556/redoc</code>; you will see automatically generated interactive API documentation!</p>
@@ -192,10 +197,10 @@
 <td align="center">Settings proxy Value</td>
 </tr>
 <tr>
-<td align="center">skip</td>
+<td align="center">check_record</td>
 <td align="center">bool</td>
-<td align="center">Whether to skip notes with download records; set to <code>true</code> will not return notes data with download records; Optional parameter</td>
-<td align="center">false</td>
+<td align="center">Whether to skip notes with existing download records; Optional parameter</td>
+<td align="center">true</td>
 </tr>
 </tbody>
 </table>
@@ -217,7 +222,10 @@ async def example_api():
     response = post(server, json=data, timeout=10)
     print(response.json())
 </pre>
+</details>
 <h2>MCP Mode</h2>
+<details>
+<summary>MCP Mode description, suitable for developers who need to run MCP services to integrate with AI assistants and other tools (click to expand)</summary>
 <p><b>Start:</b> Run the command: <code>python .\main.py mcp</code></p>
 <p><b>Stop:</b> Press <code>Ctrl</code> + <code>C</code> to stop the server</p>
 <h3>MCP Configuration Example</h3>
@@ -227,8 +235,6 @@ async def example_api():
 <p><b>MCP URL:</b><code>http://127.0.0.1:5556/mcp/</code></p>
 <img src="static/screenshot/MCP配置示例.png" alt="MCP Configuration Example">
 <h3>MCP Invocation Example</h3>
-<details>
-<summary>MCP Function and Call Example (Click to Expand)</summary>
 <h4><strong>Retrieve RedNote Notes Information</strong></h4>
 <img src="static/screenshot/MCP获取数据.png" alt="MCP Data Retrieval">
 <hr>
@@ -287,6 +293,8 @@ async def example_api():
 </ul>
 <p><strong>The automatic page scroll feature has been refactored and is turned off by default! Enabling this feature may be detected as automated behavior by RedNote, potentially resulting in account risk control or banning.</strong></p>
 <h1>💻 Secondary Development</h1>
+<details>
+<summary>Secondary development code example, suitable for developers who build on this project (click to expand)</summary>
 <p>If you have other needs, you can perform code calls or modifications based on the comments in <code>example.py</code>!</p>
 <pre>
 async def example():
@@ -297,9 +305,10 @@ async def example():
     work_path = "D:\\"  # Root path for saving note data/files, default: project root path
     folder_name = "Download"  # Folder name for storing note files (auto-created), default: Download
     name_format = "作品标题 作品描述"
-    user_agent = ""  # User-Agent
+    impersonate = "chrome146"  # Browser Impersonate Targets
     cookie = ""  # Xiaohongshu web Cookie
     proxy = None  # Network proxy
+    proxy_download = False  # Whether to use the network proxy from the proxy parameter when downloading files
     timeout = 5  # Request timeout limit, unit: seconds
     chunk = 1024 * 1024 * 10  # Data chunk size fetched from server per download, unit: bytes
     max_retry = 2  # Maximum retry count on request failure, unit: retries
@@ -308,6 +317,7 @@ async def example():
     folder_mode = False  # Whether to store each note's files in a separate folder
     image_download = True  # Image/album note download switch
     video_download = True  # Video note download switch
+    video_cover_download = False  # Video note cover download switch
     live_download = False  # Image GIF file download switch
     download_record = True  # Whether to record successfully downloaded note IDs
     language = "zh_CN"  # Set program prompt language
@@ -321,9 +331,10 @@ async def example():
         work_path=work_path,
         folder_name=folder_name,
         name_format=name_format,
-        user_agent=user_agent,
+        impersonate=impersonate,
         cookie=cookie,
         proxy=proxy,
+        proxy_download=proxy_download,
         timeout=timeout,
         chunk=chunk,
         max_retry=max_retry,
@@ -332,6 +343,7 @@ async def example():
         folder_mode=folder_mode,
         image_download=image_download,
         video_download=video_download,
+        video_cover_download=video_cover_download,
         live_download=live_download,
         download_record=download_record,
         language=language,
@@ -355,13 +367,19 @@ async def example():
             )
         )
 </pre>
+</details>
 <h1>📋 Read Clipboard</h1>
+<details>
+<summary>Clipboard reading platform notes, suitable for users outside Windows (Mac / Linux) (click to expand)</summary>
 <p>The project uses <code>pyperclip</code> to implement clipboard reading functionality, which varies across different systems.</p>
 <p>On Windows, no additional modules are needed.</p>
 <p>On Mac, this module makes use of the pbcopy and pbpaste commands, which should come with the os.</p>
 <p>On Linux, this module makes use of the xclip or xsel commands, which should come with the os. Otherwise run "sudo apt-get install xclip" or "sudo apt-get install xsel" (Note: xsel does not always seem to work.)</p>
 <p>Otherwise on Linux, you will need the qtpy or PyQT5 modules installed.</p>
+</details>
 <h1>⚙️ Configuration File</h1>
+<details>
+<summary>Configuration file parameters, suitable for users who need to directly modify program configuration parameters (click to expand)</summary>
 <p>The <code>./Volume/settings.json</code> file in the project's root directory is automatically generated on the first run. You can use it to customize the program's operating parameters. If an invalid parameter value is set, the program will revert to its default value.</p>
 <p>If you are unable to modify settings through the program's interface, you can edit this configuration file directly. If your computer lacks a suitable program for editing JSON files, we recommend using an <a href="https://www.toolhelper.cn/JSON/JSONFormat">online tool</a>. Remember to restart the software after making changes for them to take effect.</p>
 <table>
@@ -399,10 +417,10 @@ async def example():
 <td align="center"><code>发布时间 作者昵称 作品标题</code></td>
 </tr>
 <tr>
-<td align="center">user_agent</td>
+<td align="center">impersonate</td>
 <td align="center">str</td>
-<td align="center">Browser User Agent</td>
-<td align="center">Built-in Chrome User Agent</td>
+<td align="center">Browser Impersonate Targets, refer to <a href="https://curl-cffi.readthedocs.io/en/latest/impersonate/targets.html">curl_cffi documentation</a></td>
+<td align="center">chrome146</td>
 </tr>
 <tr>
 <td align="center">cookie</td>
@@ -415,6 +433,12 @@ async def example():
 <td align="center">str</td>
 <td align="center">Set program proxy</td>
 <td align="center">null</td>
+</tr>
+<tr>
+<td align="center">proxy_download</td>
+<td align="center">bool</td>
+<td align="center">Whether to use the network proxy from the proxy parameter when downloading files</td>
+<td align="center">false</td>
 </tr>
 <tr>
 <td align="center">timeout</td>
@@ -457,6 +481,12 @@ async def example():
 <td align="center">bool</td>
 <td align="center">Switch for downloading video notes files</td>
 <td align="center">true</td>
+</tr>
+<tr>
+<td align="center">video_cover_download</td>
+<td align="center">bool</td>
+<td align="center">Switch for downloading video notes cover files; the cover format is the same as the image_format params</td>
+<td align="center">false</td>
 </tr>
 <tr>
 <td align="center">live_download</td>
@@ -538,9 +568,7 @@ async def example():
 <p>When <code>author_archive</code> is set to <code>true</code>, the program will store each author's notes in dedicated folders. If an author's nickname changes, the program automatically updates the nickname portion in existing downloaded filenames!</p>
 <p>Additionally, you can configure author aliases through the <code>mapping_data</code> parameter. When an alias is set, the program will use your custom alias instead of the original nickname in filenames!</p>
 </div>
-<hr>
-<p><b>Additional Notes: The parameters <code>user_agent</code> examples are provided for reference; Strongly recommend setting according to actual browser information!</b></p>
-<img src="static/screenshot/请求头示例图.png" alt="">
+</details>
 <h1 id="cookie">🌐 Cookie</h1>
 <ol>
 <li>Open the browser (optional: start in incognito mode) and visit <code>https://www.xiaohongshu.com/explore</code></li>
@@ -561,7 +589,7 @@ async def example():
 <p>This feature is enabled by default. If it is turned off, XHS-Downloader will check if the file exists. If the file exists, it will skip the download!</p>
 <h2>Build of Executable File Guide</h2>
 <details>
-<summary>Build of Executable File Guide (Click to Expand)</summary>
+<summary>Build of Executable File Guide, suitable for users who wish to build executable files on their own (Click to Expand)</summary>
 
 This guide will walk you through forking this repository and executing GitHub Actions to automatically build and package
 the program based on the latest source code!
@@ -653,14 +681,6 @@ repository to execute the build process
 
 # 💝 Project Sponsorship
 
-## Bloome
-
-<p><a href="https://bloome.im/app?ref=KUyJQU6F&utm_medium=github&utm_source=JoeanAmier-XHS-Downloader-ivor-202606"><img src="static/other/Bloome_AD.png" alt="Bloome"></a></p>
-<p>Don't want to deal with setting up the environment locally? You can integrate XHS-Downloader as an Agent with <a href="https://bloome.im/app?ref=KUyJQU6F&utm_medium=github&utm_source=JoeanAmier-XHS-Downloader-ivor-202606">Bloome</a>: zero configuration, one-click cloud deployment, accessible from both browser and mobile, and you can share your configured Agent directly with others without needing separate deployments!</p>
-<p>Try it now: <a href="https://bloome.im/app?ref=KUyJQU6F&utm_medium=github&utm_source=JoeanAmier-XHS-Downloader-ivor-202606">https://bloome.im/app?ref=KUyJQU6F&utm_medium=github&utm_source=JoeanAmier-XHS-Downloader-ivor-202606</a></p>
-
-***
-
 ## DartNode
 
 [![Powered by DartNode](static/other/DartNode_AD.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
@@ -682,6 +702,8 @@ repository to execute the build process
 </table>
 <p>If you are willing, you may consider making a donation to provide additional support for <b>XHS-Downloader</b>!</p>
 <h1>🌟 Contribution Guidelines</h1>
+<details>
+<summary>Contribution Guidelines, suitable for developers who wish to contribute code to this project (click to expand)</summary>
 <p><strong>Welcome to contributing to this project! To keep the codebase clean, efficient, and easy to maintain, please read the following guidelines carefully to ensure that your contributions can be accepted and integrated smoothly.</strong></p>
 <ul>
 <li>Before starting development, please pull the latest code from the <code>develop</code> branch as the basis for your modifications; this helps avoid merge conflicts and ensures your changes are based on the latest state of the project.</li>
@@ -698,6 +720,7 @@ repository to execute the build process
 <li><a href="https://www.contributor-covenant.org/version/2/1/code_of_conduct/">Contributor Covenant</a></li>
 <li><a href="https://opensource.guide/how-to-contribute/">How to Contribute to Open Source</a></li>
 </ul>
+</details>
 <h1>✉️ Contact the Author</h1>
 <ul>
 <li>Author's Email：yonglelolu@foxmail.com</li>
@@ -710,9 +733,13 @@ repository to execute the build process
 <li><b>KS-Downloader（快手、KuaiShou）</b>：<a href="https://github.com/JoeanAmier/KS-Downloader">https://github.com/JoeanAmier/KS-Downloader</a></li>
 </ul>
 <h1>⭐ Star History</h1>
-<p>
-<img alt="Star History Chart" src="https://api.star-history.com/svg?repos=JoeanAmier/XHS-Downloader&amp;type=Timeline"/>
-</p>
+<a href="https://www.star-history.com/?repos=joeanamier%2Fxhs-downloader&type=timeline&releases=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=joeanamier/xhs-downloader&type=timeline&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=joeanamier/xhs-downloader&type=timeline&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=joeanamier/xhs-downloader&type=timeline&legend=bottom-right" />
+ </picture>
+</a>
 <h1>⚠️ Disclaimer</h1>
 <ol>
 <li>The user's use of this project is entirely at their own discretion and responsibility. The author assumes no liability for any losses, claims, or risks arising from the user's use of this project.</li>
@@ -733,11 +760,10 @@ repository to execute the build process
 
 # 💡 Project References
 
-* https://github.com/encode/httpx/
+* https://github.com/lexiforest/curl_cffi
 * https://github.com/tiangolo/fastapi
 * https://github.com/textualize/textual/
-* https://github.com/pyinstaller/pyinstaller
-* https://github.com/zbowling/beartype-pyinstaller-repro
+* https://github.com/marcelotduarte/cx_Freeze/
 * https://github.com/jlowin/fastmcp
 * https://github.com/omnilib/aiosqlite
 * https://github.com/carpedm20/emoji/
