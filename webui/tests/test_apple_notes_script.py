@@ -5,11 +5,13 @@ Stdlib only — run from the repository root with::
     uv run python -m unittest discover webui/tests
 
 ``scripts/apple_notes_xhslinks.sh`` reads Apple Notes on a Mac (via AppleScript)
-and prints the ``xhslink.com`` short links they contain. The AppleScript half
-needs a real Mac and cannot run here, but the link-extraction pipeline — the
-only part carrying logic — is exposed through the script's ``--extract`` mode,
-which filters **stdin** and touches nothing macOS-specific. These tests pipe
-sample note HTML through it and pin the matching behaviour down.
+and prints the work links they contain (``xhslink.com`` short links plus
+``xiaohongshu.com`` / ``rednote.com`` explore / discovery/item URLs). The
+AppleScript half needs a real Mac and cannot run here, but the link-extraction
+pipeline — the only part carrying logic — is exposed through the script's
+``--extract`` mode, which filters **stdin** and touches nothing macOS-specific.
+These tests pipe sample note HTML through it and pin the matching behaviour
+down.
 """
 
 from __future__ import annotations
@@ -90,13 +92,100 @@ class ExtractLinksTest(unittest.TestCase):
             ["http://xhslink.com/o/AAA", "http://xhslink.com/o/BBB"],
         )
 
-    def test_non_xhslink_urls_are_ignored(self) -> None:
+    def test_explore_and_discovery_urls_are_extracted(self) -> None:
+        self.assertEqual(
+            self.extract(
+                "https://www.xiaohongshu.com/explore/672451ee000000001a034bc6 "
+                "https://www.xiaohongshu.com/discovery/item/6749f3370000000007031c8e "
+                "http://xhslink.com/a/RVjdnIaGmsi2"
+            ),
+            [
+                "https://www.xiaohongshu.com/explore/672451ee000000001a034bc6",
+                "https://www.xiaohongshu.com/discovery/item/6749f3370000000007031c8e",
+                "http://xhslink.com/a/RVjdnIaGmsi2",
+            ],
+        )
+
+    def test_explore_and_discovery_inside_href_attribute(self) -> None:
+        html = (
+            '<a href="https://www.xiaohongshu.com/explore/672451ee000000001a034bc6">e</a>'
+            '<a href="https://www.xiaohongshu.com/discovery/item/6749f3370000000007031c8e">d</a>'
+        )
+        self.assertEqual(
+            self.extract(html),
+            [
+                "https://www.xiaohongshu.com/explore/672451ee000000001a034bc6",
+                "https://www.xiaohongshu.com/discovery/item/6749f3370000000007031c8e",
+            ],
+        )
+
+    def test_www_is_optional_on_xiaohongshu_and_rednote_hosts(self) -> None:
+        self.assertEqual(
+            self.extract("https://xiaohongshu.com/explore/672451ee000000001a034bc6"),
+            ["https://xiaohongshu.com/explore/672451ee000000001a034bc6"],
+        )
+        self.assertEqual(
+            self.extract("https://rednote.com/discovery/item/69fb56ec0000000035023a78"),
+            ["https://rednote.com/discovery/item/69fb56ec0000000035023a78"],
+        )
+
+    def test_rednote_discovery_url_with_query_string(self) -> None:
+        url = (
+            "https://www.rednote.com/discovery/item/69fb56ec0000000035023a78"
+            "?xsec_token=ABHQbS7zib07Px-XlsytiyAaYCj9HCiLxvT0Xr7jGED_Q="
+            "&xsec_source=pc_user"
+        )
+        self.assertEqual(self.extract(f"see {url} please"), [url])
+
+    def test_rednote_inside_href_attribute(self) -> None:
+        html = (
+            '<a href="https://www.rednote.com/discovery/item/69fb56ec0000000035023a78'
+            '?xsec_token=ABC=&amp;xsec_source=pc_user">note</a>'
+        )
+        self.assertEqual(
+            self.extract(html),
+            [
+                "https://www.rednote.com/discovery/item/69fb56ec0000000035023a78"
+                "?xsec_token=ABC=&xsec_source=pc_user"
+            ],
+        )
+
+    def test_query_string_is_kept(self) -> None:
+        url = (
+            "https://www.xiaohongshu.com/explore/672451ee000000001a034bc6"
+            "?xsec_token=ABC123&source=web"
+        )
+        self.assertEqual(self.extract(f"see {url} please"), [url])
+
+    def test_html_amp_in_query_string_is_decoded(self) -> None:
+        html = (
+            '<a href="https://www.xiaohongshu.com/explore/672451ee000000001a034bc6'
+            '?xsec_token=ABC123&amp;source=web">note</a>'
+        )
+        self.assertEqual(
+            self.extract(html),
+            [
+                "https://www.xiaohongshu.com/explore/672451ee000000001a034bc6"
+                "?xsec_token=ABC123&source=web"
+            ],
+        )
+
+    def test_unrelated_urls_are_ignored(self) -> None:
         text = (
             "https://www.xiaohongshu.com/explore/65a1b2c3 "
+            "https://www.xiaohongshu.com/search/foo "
+            "https://www.xiaohongshu.com/ "
+            "https://www.rednote.com/search/foo "
             "https://example.com/xhslink.com/o/nope "  # host is example.com
             "http://xhslink.com/o/KEEP"
         )
-        self.assertEqual(self.extract(text), ["http://xhslink.com/o/KEEP"])
+        self.assertEqual(
+            self.extract(text),
+            [
+                "https://www.xiaohongshu.com/explore/65a1b2c3",
+                "http://xhslink.com/o/KEEP",
+            ],
+        )
 
     def test_multiple_links_across_lines(self) -> None:
         text = "http://xhslink.com/o/AAA\nsome prose\nhttp://xhslink.com/o/BBB\n"

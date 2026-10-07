@@ -4,13 +4,15 @@ Small helper scripts for feeding links into the [batch Web UI](../README.md).
 
 ## `apple_notes_xhslinks.sh`
 
-Print every XiaoHongShu / RedNote short link (`http://xhslink.com/...`) stored in
-your **Apple Notes**, one per line and deduplicated, ready to paste into the Web
-UI's links box.
+Print every XiaoHongShu / RedNote work link stored in your **Apple Notes**, one
+per line and deduplicated, ready to paste into the Web UI's links box. Matches
+`http://xhslink.com/...` short links plus `xiaohongshu.com` and `rednote.com`
+`explore` and `discovery/item` URLs.
 
 A common workflow is to share a XiaoHongShu post to Apple Notes from your iPhone
-("Share ▸ Notes"), which drops a `http://xhslink.com/o/…` link into a note. This
-script collects all of those in one go so you can batch-download them.
+("Share ▸ Notes"), which drops a `http://xhslink.com/o/…` (or `/a/…`) link into
+a note, or to paste a browser `explore` / `discovery/item` URL. This script
+collects all of those in one go so you can batch-download them.
 
 ### Requirements
 
@@ -37,7 +39,7 @@ Notes"* — click **OK**. If you dismiss it by accident, re-enable access under
 ### Deleting notes after export
 
 Pass `--delete` to clean up once you've grabbed the links — it moves every note
-that contained an `xhslink.com` link to Notes' **Recently Deleted** folder:
+that contained a matching work link to Notes' **Recently Deleted** folder:
 
 ```bash
 ./apple_notes_xhslinks.sh --delete        # print links, then confirm and trash
@@ -71,11 +73,13 @@ too), reading each note's HTML body and skipping any it can't open (a locked
 note, or one on an IMAP/Exchange account). It deliberately does **not** use the
 app-wide note list, because that also returns trashed notes; walking real folders
 and skipping the **Recently Deleted** folder is what keeps already-deleted notes
-from resurfacing. From the bodies it reads, it extracts anything matching
-`https?://xhslink.com/…` — whether the link is visible text or hidden inside an
-`href="…"` attribute — trims trailing ASCII punctuation, and removes duplicates
-while keeping first-seen order. Without `--delete` it never modifies your notes;
-it only reads them.
+from resurfacing. From the bodies it reads, it extracts `xhslink.com` short
+links and `xiaohongshu.com` / `rednote.com` `explore` / `discovery/item` URLs —
+whether visible text or hidden inside an `href="…"` attribute — keeps any query
+string (a copied `xsec_token` helps the download), decodes HTML `&amp;` to `&`,
+trims trailing ASCII punctuation, and removes duplicates while keeping
+first-seen order. Without `--delete` it never modifies your notes; it only
+reads them.
 
 The link body uses the **same terminator set as the engine's `SHORT` pattern**
 (`source/application/app.py`): it stops at whitespace, quotes, angle brackets,
@@ -133,7 +137,8 @@ echo 'see http://xhslink.com/o/6RRY1UzhcbG.' | ./apple_notes_xhslinks.sh --extra
 
 [`../tests/test_apple_notes_script.py`](../tests/test_apple_notes_script.py)
 pipes sample note HTML through that mode to pin down the matching behaviour
-(href vs. plain text, trailing punctuation, dedup, ignoring non-xhslink URLs).
+(href vs. plain text, explore / discovery/item URLs, trailing punctuation, dedup,
+ignoring unrelated hosts).
 Run it with the rest of the Web UI suite from the repository root:
 
 ```bash

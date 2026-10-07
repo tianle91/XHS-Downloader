@@ -2,8 +2,9 @@
 #
 # apple_notes_xhslinks.sh
 #
-# Print every XiaoHongShu / RedNote short link (http://xhslink.com/...) found in
-# your Apple Notes, one per line, deduplicated. The output is ready to paste
+# Print every XiaoHongShu / RedNote work link found in your Apple Notes, one
+# per line, deduplicated. Matches xhslink.com short links plus xiaohongshu.com
+# and rednote.com explore / discovery/item URLs. The output is ready to paste
 # straight into the XHS-Downloader batch Web UI links box.
 #
 # Notes in the "Recently Deleted" folder are ignored, so already-trashed notes
@@ -33,24 +34,28 @@ usage() {
   sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'
 }
 
-# Core link-extraction: read text (note HTML) on stdin and print the xhslink.com
-# short links it contains, one per line, deduped in first-seen order. The link
-# body uses the same terminator set as the engine's SHORT pattern in
-# source/application/app.py — whitespace, quotes, angle brackets, ``\ ^ ` { | }``
-# and CJK punctuation ``，。；！？、【】《》`` — so a plain-text link glued to
-# Chinese text (e.g. ``.../6RRY1UzhcbG，看笔记``) stops at the fullwidth comma
-# instead of swallowing it. Any trailing ASCII punctuation an editor glued on is
-# then stripped. Uses ``perl`` (preinstalled on macOS) with UTF-8 I/O so the
-# multibyte terminators match reliably, where BSD ``grep`` bracket expressions
-# are unreliable for multibyte characters. Kept as one function so the matching
-# behaviour has a single source of truth — exercised without a Mac via
-# ``--extract`` (see webui/tests/test_apple_notes_script.py).
+# Core link-extraction: read text (note HTML) on stdin and print the work links
+# it contains, one per line, deduped in first-seen order. Matches the same
+# shapes the Web UI accepts from a paste: xhslink.com short links, plus
+# xiaohongshu.com / rednote.com explore / discovery/item URLs (www. optional).
+# Query strings are kept — a copied xsec_token helps the download — and
+# ``&amp;`` from HTML hrefs is decoded to ``&``. The link body uses the same
+# terminator set as the engine's SHORT pattern in source/application/app.py —
+# whitespace, quotes, angle brackets, ``\ ^ ` { | }`` and CJK punctuation
+# ``，。；！？、【】《》`` — so a plain-text link glued to Chinese text (e.g.
+# ``.../6RRY1UzhcbG，看笔记``) stops at the fullwidth comma instead of swallowing
+# it. Any trailing ASCII punctuation an editor glued on is then stripped. Uses
+# ``perl`` (preinstalled on macOS) with UTF-8 I/O so the multibyte terminators
+# match reliably, where BSD ``grep`` bracket expressions are unreliable for
+# multibyte characters. Kept as one function so the matching behaviour has a
+# single source of truth — exercised without a Mac via ``--extract`` (see
+# webui/tests/test_apple_notes_script.py).
 #
 # Scheme note: unlike the engine's ``(?:https?://)?`` we require ``https?://``.
 # Notes always store XHS shares with the scheme, and requiring it avoids matching
 # ``xhslink.com`` embedded in another host's path (e.g. ``foo.com/xhslink.com/…``).
 extract_links() {
-  perl -CSD -Mutf8 -ne 'while (m{(https?://xhslink\.com/[^\s"<>\\^`{|}，。；！？、【】《》]+)}g) { my $u = $1; $u =~ s/[.,;:)]+$//; print "$u\n" unless $seen{$u}++; }'
+  perl -CSD -Mutf8 -ne 'while (m{(https?://(?:xhslink\.com/|(?:www\.)?(?:xiaohongshu|rednote)\.com/(?:explore/|discovery/item/))[^\s"<>\\^`{|}，。；！？、【】《》]+)}g) { my $u = $1; $u =~ s/&amp;/&/g; $u =~ s/[.,;:)]+$//; print "$u\n" unless $seen{$u}++; }'
 }
 
 DELETE=0
@@ -177,7 +182,7 @@ end dumpFolder
 APPLESCRIPT
 )"
 
-# Extract the xhslink.com short links from the collected note HTML.
+# Extract work links from the collected note HTML.
 links="$(printf '%s\n' "$notes_html" | extract_links)"
 
 if [[ -n "$links" ]]; then
@@ -186,15 +191,16 @@ else
   # Nothing matched — help distinguish "no access" from "no links". Diagnostics
   # go to stderr so they never pollute a piped/redirected link list.
   {
-    echo "No http://xhslink.com/... links found."
+    echo "No XiaoHongShu links found."
     if [[ -z "$notes_html" ]]; then
       echo "  No note content was read at all — likely an access problem. Grant"
       echo "  control under System Settings ▸ Privacy & Security ▸ Automation"
       echo "  (Terminal → Notes), make sure the Notes app is open and finished"
       echo "  syncing, then re-run. Use --list-folders to see what is visible."
     else
-      echo "  Notes were read, but none contained an xhslink.com link (locked"
-      echo "  notes and the Recently Deleted folder are skipped)."
+      echo "  Notes were read, but none contained an xhslink.com, xiaohongshu.com,"
+      echo "  or rednote.com work link (locked notes and the Recently Deleted"
+      echo "  folder are skipped)."
     fi
   } >&2
 fi
@@ -202,10 +208,11 @@ fi
 [[ "$DELETE" -eq 1 ]] || exit 0
 
 # ---- Deletion --------------------------------------------------------------
-# Collect the ids of the notes to trash: those that mention xhslink.com, walking
-# real folders so the Recently Deleted folder is excluded (same reasoning as the
-# body dump above). Referencing notes by id (not list index) keeps deletion
-# stable even as the collection shrinks.
+# Collect the ids of the notes to trash: those that mention a work-link host or
+# path (xhslink.com, xiaohongshu.com or rednote.com explore / discovery/item),
+# walking real folders so the Recently Deleted folder is excluded (same
+# reasoning as the body dump above). Referencing notes by id (not list index)
+# keeps deletion stable even as the collection shrinks.
 ids_raw="$(osascript <<APPLESCRIPT
 tell application "Notes"
     set trashNames to ${TRASH_NAMES}
@@ -229,7 +236,8 @@ on collectFolder(theFolder, trashNames)
         try
             repeat with n in notes of theFolder
                 try
-                    if (body of n) contains "xhslink.com" then
+                    set b to body of n
+                    if b contains "xhslink.com" or b contains "xiaohongshu.com/explore/" or b contains "xiaohongshu.com/discovery/item/" or b contains "rednote.com/explore/" or b contains "rednote.com/discovery/item/" then
                         set acc to acc & (id of n) & linefeed
                     end if
                 end try
@@ -252,7 +260,7 @@ while IFS= read -r line; do
 done <<< "$ids_raw"
 
 if [[ "${#ids[@]}" -eq 0 ]]; then
-  echo "No notes contained xhslink.com links; nothing to delete." >&2
+  echo "No notes contained XiaoHongShu links; nothing to delete." >&2
   exit 0
 fi
 
@@ -261,7 +269,7 @@ if [[ "$ASSUME_YES" -ne 1 ]]; then
     echo "Refusing to delete without a terminal to confirm on; re-run with --yes." >&2
     exit 1
   fi
-  printf 'Move %d note(s) containing xhslink.com links to Recently Deleted? [y/N] ' \
+  printf 'Move %d note(s) containing XiaoHongShu links to Recently Deleted? [y/N] ' \
     "${#ids[@]}" >&2
   read -r reply </dev/tty || reply=""
   case "$reply" in

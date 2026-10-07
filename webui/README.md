@@ -74,8 +74,10 @@ Then open <http://127.0.0.1:5557>.
 
 [`scripts/`](scripts/) holds small helpers for feeding links into the batch box.
 [`scripts/apple_notes_xhslinks.sh`](scripts/apple_notes_xhslinks.sh) (macOS)
-prints every `http://xhslink.com/...` link found in your Apple Notes, ready to
-paste — handy after sharing XiaoHongShu posts to Notes from an iPhone. See
+prints every XiaoHongShu / RedNote work link found in your Apple Notes
+(`xhslink.com` short links plus `explore` / `discovery/item` URLs on
+`xiaohongshu.com` and `rednote.com`), ready to paste — handy after sharing
+posts to Notes from an iPhone. See
 [`scripts/README.md`](scripts/README.md).
 
 ## Where files go
