@@ -28,7 +28,7 @@ import time
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from json import dump
+from json import JSONDecodeError, dump
 from os import getenv
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -272,6 +272,9 @@ class BatchOptions(BaseModel):
             "video_download": self.video_download,
             "live_download": self.live_download,
             "write_mtime": self.write_mtime,
+            # Follow curl_cffi's current Chrome profile. The engine's pinned
+            # chrome146 profile can redirect otherwise valid notes to CAPTCHA.
+            "impersonate": "chrome",
             "cookie": self.cookie.strip(),
             "proxy": self.proxy.strip() or None,
             # Web-UI specific: never skip based on the shared history DB (this
@@ -463,6 +466,16 @@ async def _run_job(job: Job, options: BatchOptions) -> None:
                     xhs.downloader.folder = folder
                     try:
                         result = await xhs.extract(resolved[0], True, None, True)
+                    except JSONDecodeError as exc:
+                        job.logs.append(
+                            f"Failed {token}: could not parse the page's embedded "
+                            "note data. Open the full shared link in your browser "
+                            "and check whether the note is available or requires "
+                            "login/verification. If it opens there, refresh the "
+                            "Cookie option from that site and retry one link "
+                            f"before the full batch. Details: {exc!r}"
+                        )
+                        result = []
                     except Exception as exc:  # noqa: BLE001 - surface to the user
                         job.logs.append(f"Error processing {token}: {exc!r}")
                         result = []
