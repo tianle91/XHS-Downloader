@@ -132,6 +132,10 @@ class JobTest(unittest.TestCase):
 
 
 class EngineKwargsTest(unittest.TestCase):
+    def test_uses_current_chrome_profile(self) -> None:
+        kwargs = BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))
+        self.assertEqual(kwargs["impersonate"], "chrome")
+
     def test_isolation_policy_is_hard_coded(self) -> None:
         kwargs = BatchOptions(links="x").engine_kwargs(Path("/tmp/work"))
         self.assertFalse(kwargs["download_record"])  # never skip already-seen works
