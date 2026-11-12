@@ -58,6 +58,7 @@ def get_ui_messages() -> dict[str, str]:
         "monitor.queue_empty": _("监听任务队列为空"),
         "queue.clear_finished": _("清理已结束任务"),
         "queue.open_folder": _("打开下载文件夹"),
+        "queue.copy_links": _("复制当前筛选的作品链接"),
         "queue.pending": _("待处理"),
         "queue.processing": _("处理中"),
         "queue.success": _("成功"),
@@ -145,6 +146,10 @@ def get_ui_messages() -> dict[str, str]:
         "settings.second": _("秒"),
         "settings.retry": _("请求数据失败时，重试的最大次数"),
         "settings.times": _("次"),
+        "settings.avg_delay": _("请求数据的间隔时间均值"),
+        "settings.avg_delay_help": _(
+            "每次请求数据前的等待时间均值，用于避免请求过于频繁"
+        ),
         "settings.chunk": _("下载数据块大小"),
         "settings.byte": _("字节"),
         "settings.chunk_help": _("每次从下载响应中读取并写入临时文件的数据量"),
@@ -188,6 +193,8 @@ def get_ui_messages() -> dict[str, str]:
         "toast.language_load_failed": _("语言文件加载失败"),
         "toast.operation_failed": _("操作失败"),
         "toast.no_supported_link": _("提取小红书作品链接失败"),
+        "toast.links_copied": _("已复制 {0} 个链接"),
+        "toast.no_links_to_copy": _("当前筛选下没有作品"),
         "name.drag_disable": _("拖动调整顺序，点击停用"),
         "name.drag_enable": _("拖动或点击启用"),
     }

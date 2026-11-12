@@ -42,6 +42,7 @@
 <li>✅ Customizable file name format</li>
 <li>✅ Support API call functionality</li>
 <li>✅ Support MCP call functionality</li>
+<li>✅ Support authentication for API, MCP, and userscripts</li>
 <li>✅ Support file breakpoint resume download</li>
 <li>✅ Intelligent recognition of notes file types</li>
 <li>✅ Supports author alias configuration</li>
@@ -131,6 +132,9 @@
 <p>The project supports command line mode, allowing you to download note files directly via command line parameters, and you can also set the image sequence number to download!</p>
 <p><strong>Note:</strong> When the <code>--index</code> parameter is not set, multiple notes links can be passed in. All links must be enclosed in quotation marks and separated by spaces. When the <code>--index</code> parameter is set, multiple notes links are not supported. Even if multiple links are passed in, the program will only process the first link!</p>
 <p>The <code>bool</code> type parameters support setting with <code>true</code>, <code>false</code>, <code>1</code>, <code>0</code>, <code>yes</code>, <code>no</code>, <code>on</code> or <code>off</code> (case insensitive).</p>
+<h2 id="auth-token">Generate Authentication Token</h2>
+<pre>python .\main.py token</pre>
+<p>With <code>uv</code>, you can run <code>uv run main.py token</code> to obtain the authentication token.</p>
 <h2>Read Browser Cookies</h2>
 <p>This feature is no longer available. Please refer to the <a href="#cookie">Obtain Cookie</a> tutorial!</p>
 <p><del>You can use the command line to <b>read cookies from browser and write them to the configuration file!</b></del></p>
@@ -143,11 +147,15 @@
 </details>
 <h1>🖥 Server Mode</h1>
 <p>Server modes include API mode and MCP mode!</p>
+<h2>Authentication Token</h2>
+<p>API and MCP modes print the authentication token to the terminal when they start.</p>
+<p>The token is valid indefinitely by default. Do not expose it publicly. The token is bound to the current project's <code>Volume/auth_secret.key</code> file. To rotate the token, delete this file; the program will create a new key the next time it starts or generates a token, and the old token will become invalid.</p>
 <h2>API Mode</h2>
 <details>
 <summary>API Mode description, suitable for developers who need to call the API to retrieve note data or download files (click to expand)</summary>
 <p><b>Start:</b> Run the command: <code>python .\main.py api</code></p>
 <p><b>Stop:</b> Press <code>Ctrl</code> + <code>C</code> to stop the server</p>
+<p>When calling a business API, the request must include <code>Authorization: Bearer &lt;token&gt;</code> in the request header. Requests without a token or with an invalid token return <code>403</code>. In the <code>/docs</code> page, click <code>Authorize</code> in the upper-right corner and enter the token to test the API.</p>
 <p>Open <code>http://127.0.0.1:5556/docs</code> or <code>http://127.0.0.1:5556/redoc</code>; you will see automatically generated interactive API documentation!</p>
 <p><b>Request endpoint:</b>
 <code>/xhs/detail</code></p>
@@ -219,20 +227,34 @@ async def example_api():
         ],
         "proxy": "http://127.0.0.1:10808",
     }
-    response = post(server, json=data, timeout=10)
+    token = "Authentication token printed when API mode starts"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = post(server, json=data, headers=headers, timeout=10)
     print(response.json())
 </pre>
 </details>
 <h2>MCP Mode</h2>
 <details>
 <summary>MCP Mode description, suitable for developers who need to run MCP services to integrate with AI assistants and other tools (click to expand)</summary>
+<p>MCP mode is optional; when running from source, install the extra <code>fastmcp</code> library. Reference command: <code>pip install "fastmcp&gt;=4.1.0"</code> or <code>uv sync --no-dev --extra mcp</code></p>
 <p><b>Start:</b> Run the command: <code>python .\main.py mcp</code></p>
 <p><b>Stop:</b> Press <code>Ctrl</code> + <code>C</code> to stop the server</p>
+<p>When calling the MCP HTTP endpoint, clients must include <code>Authorization: Bearer &lt;token&gt;</code> in the request header. Requests without a token or with an invalid token are rejected.</p>
 <h3>MCP Configuration Example</h3>
 
 [//]: # (<h4>STDIO</h4>)
 <h4>Streamable HTTP</h4>
-<p><b>MCP URL:</b><code>http://127.0.0.1:5556/mcp/</code></p>
+<p><b>MCP URL:</b><code>http://127.0.0.1:5556/mcp</code></p>
+<pre>{
+  "mcpServers": {
+    "XHS-Downloader": {
+      "url": "http://127.0.0.1:5556/mcp",
+      "headers": {
+        "Authorization": "Bearer &lt;authentication token&gt;"
+      }
+    }
+  }
+}</pre>
 <img src="static/screenshot/MCP配置示例.png" alt="MCP Configuration Example">
 <h3>MCP Invocation Example</h3>
 <h4><strong>Retrieve RedNote Notes Information</strong></h4>
@@ -255,7 +277,7 @@ async def example_api():
 </ul>
 <h1 id="user-scripts">🕹 User Script</h1>
 <p>If your browser has the <a href="https://www.tampermonkey.net/">Tampermonkey</a> extension installed, you can use the userscript to try the project's features!</p>
-<p>Userscript links (right-click to copy the link): <a href="https://raw.githubusercontent.com/JoeanAmier/XHS-Downloader/refs/heads/master/static/XHS-Downloader.js">master branch</a>, <a href="https://raw.githubusercontent.com/JoeanAmier/XHS-Downloader/refs/heads/develop/static/XHS-Downloader.js">develop branch</a></p>
+<p>Userscript links (right-click to copy the link): <a href="https://raw.githubusercontent.com/JoeanAmier/XHS-Downloader/refs/heads/master/static/XHS-Downloader.js">master branch</a>, <a href="https://raw.githubusercontent.com/JoeanAmier/XHS-Downloader/refs/heads/develop/static/XHS-Downloader.js">develop branch</a>, <a href="https://cdn.jsdelivr.net/gh/JoeanAmier/XHS-Downloader@master/static/XHS-Downloader.js">master branch (jsDelivr)</a>, <a href="https://cdn.jsdelivr.net/gh/JoeanAmier/XHS-Downloader@develop/static/XHS-Downloader.js">develop branch (jsDelivr)</a></p>
 <img src="static/screenshot/脚本安装教程.png" alt="">
 <hr>
 <details>
@@ -276,22 +298,18 @@ async def example_api():
 <ul><b>Function Description:</b>
 <li>In the project program's configuration file, you need to set the <code>script_server</code> parameter to <code>true</code></li>
 <li>Keep the project program running in the background, where it will act as a server to receive commands from the userscript (TUI, MCP, and API modes are all supported)</li>
+<li>Enter the authentication token in the userscript settings when configuring it for the first time or after rotating the token; see the <a href="#auth-token">CLI section's instructions for generating an authentication token</a></li>
 <li>When you visit a post page in your browser, click the <code>Push Download Task</code> option in the userscript menu</li>
 <li>The userscript will send the download task to the project program, which will handle and download the files</li>
 </ul>
 <h2>📜 Script Instructions</h2>
 <ul>
 <li>When downloading notes from RedNote, the script requires time to process the files. Please wait for a moment and do not click the download button multiple times.</li>
-<li>When extracting links for posts, collects, likes, and board from an account, the script can automatically scroll the page until all notes are loaded.</li>
-<li>When extracting recommended notes links, search notes, and user links, the script can automatically scroll a specified number of times to load more content. The default number of page scrolls is 50.</li>
-<li>The automatic scrolling page function is turned off by default; Users can freely open and modify the number of times the page is scrolled, and the modification will take effect immediately.</li>
-<li>If the automatic page scroll feature is not enabled, users need to manually scroll the page to load more content before performing other actions.</li>
 <li>Support packaging and downloading of work files; This feature is enabled by default, and notes from multiple files will be downloaded in compressed file format</li>
 <li>When pushing download tasks to the server, the file format, name rules, etc. settings will be based on the server configuration file settings</li>
 <li>Using global proxy tools may cause script download failures. If there are issues, please try disabling the proxy tool. If necessary, contact the author for feedback.</li>
 <li>XHS-Downloader userscript only implements the data collection functionality for visible content and does not include any paid or cracked features.</li>
 </ul>
-<p><strong>The automatic page scroll feature has been refactored and is turned off by default! Enabling this feature may be detected as automated behavior by RedNote, potentially resulting in account risk control or banning.</strong></p>
 <h1>💻 Secondary Development</h1>
 <details>
 <summary>Secondary development code example, suitable for developers who build on this project (click to expand)</summary>
@@ -312,6 +330,7 @@ async def example():
     timeout = 5  # Request timeout limit, unit: seconds
     chunk = 1024 * 1024 * 10  # Data chunk size fetched from server per download, unit: bytes
     max_retry = 2  # Maximum retry count on request failure, unit: retries
+    avg_delay = 6.0  # Average delay between data requests, unit: seconds
     record_data = False  # Whether to save note data to file
     image_format = "WEBP"  # Image note download format, supports: AUTO, PNG, WEBP, JPEG, HEIC
     folder_mode = False  # Whether to store each note's files in a separate folder
@@ -338,6 +357,7 @@ async def example():
         timeout=timeout,
         chunk=chunk,
         max_retry=max_retry,
+        avg_delay=avg_delay,
         record_data=record_data,
         image_format=image_format,
         folder_mode=folder_mode,
@@ -445,6 +465,12 @@ async def example():
 <td align="center">int</td>
 <td align="center">Request data timeout limit, in seconds</td>
 <td align="center">10</td>
+</tr>
+<tr>
+<td align="center">avg_delay</td>
+<td align="center">float</td>
+<td align="center">Average delay between data requests, in seconds; minimum value 0.1</td>
+<td align="center">6.0</td>
 </tr>
 <tr>
 <td align="center">chunk</td>
@@ -769,7 +795,6 @@ repository to execute the build process
 * https://github.com/carpedm20/emoji/
 * https://github.com/asweigart/pyperclip
 * https://github.com/lxml/lxml
-* https://github.com/yaml/pyyaml
 * https://github.com/pallets/click/
 * https://github.com/encode/uvicorn
 * https://github.com/Tinche/aiofiles

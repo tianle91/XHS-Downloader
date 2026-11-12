@@ -53,7 +53,7 @@ class Html:
                     proxy=proxy,
                     **kwargs,
                 )
-            await sleep_time()
+            await sleep_time(self.manager.avg_delay)
             response.raise_for_status()
             return response.text if content else str(response.url)
         except RequestException as error:
@@ -69,17 +69,17 @@ class Html:
         return bytes(url, "utf-8").decode("unicode_escape")
 
     def __request_url_with_cookie(
-            self,
-            url: str,
-            headers: dict,
-            cookie: str,
-            proxy: str | None = None,
-            **kwargs,
+        self,
+        url: str,
+        headers: dict,
+        cookie: str,
+        proxy: str | None = None,
+        **kwargs,
     ):
         return get(
             url,
             headers=headers,
-            cookies=self.manager.cookie_str_to_dict(cookie),
+            cookies=self.manager.cookie_str_to_cookies(cookie),
             timeout=self.timeout,
             verify=False,
             allow_redirects=True,
